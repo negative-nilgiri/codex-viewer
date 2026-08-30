@@ -1,0 +1,250 @@
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+}
+
+.session-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sidebar-heading,
+.session-header {
+  padding: 1.5rem;
+}
+
+.sidebar-heading {
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-heading h1,
+.session-header h2,
+.empty-transcript h2 {
+  margin: 0.2rem 0 0;
+  color: var(--heading);
+}
+
+.sidebar-heading h1 {
+  font-size: 1.35rem;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.session-link {
+  width: 100%;
+  padding: 1rem 1.25rem;
+  display: grid;
+  gap: 0.28rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 0.25rem solid transparent;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-link:hover,
+.session-link--active {
+  background: var(--selected);
+  border-left-color: var(--accent);
+}
+
+.session-link strong {
+  overflow: hidden;
+  color: var(--heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-link span,
+.session-link time {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.transcript {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(0.8rem);
+}
+
+.session-header h2 {
+  font-size: 1.45rem;
+}
+
+.session-header p {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.35rem;
+  color: var(--heading);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.message-list {
+  width: min(100% - 3rem, 70rem);
+  margin: 0 auto;
+  padding: 1rem 0 3rem;
+}
+
+.message {
+  margin: 1.5rem 0;
+}
+
+.message > header {
+  padding: 0.72rem 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-radius: 0.3rem 0.3rem 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
+.message--user > header {
+  color: white;
+  background: var(--accent);
+}
+
+.message--assistant > header {
+  color: var(--background);
+  background: var(--heading);
+}
+
+.message time {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.message pre {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 0.3rem 0.3rem;
+  color: var(--text);
+  background: var(--surface);
+  font: 0.9rem/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pagination {
+  position: sticky;
+  bottom: 0;
+  padding: 0.8rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--background);
+  font-size: 0.8rem;
+}
+
+.status,
+.loading,
+.empty-sidebar,
+.empty-transcript {
+  color: var(--muted);
+}
+
+.status {
+  padding: 0.65rem 1.5rem;
+  background: var(--selected);
+}
+
+.status--error {
+  color: var(--error);
+  background: var(--error-background);
+}
+
+.loading {
+  padding: 2rem;
+  text-align: center;
+}
+
+.empty-sidebar {
+  padding: 1.25rem;
+  font-size: 0.82rem;
+}
+
+.empty-sidebar code {
+  display: block;
+  margin-top: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.empty-transcript {
+  margin: auto;
+  padding: 3rem;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .session-sidebar {
+    position: static;
+    height: auto;
+    max-height: 35vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .session-header {
+    position: static;
+  }
+
+  .message-list {
+    width: min(100% - 1.5rem, 70rem);
+  }
+}

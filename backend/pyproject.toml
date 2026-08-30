@@ -1,0 +1,29 @@
+[project]
+name = "codex-sessions-viewer-backend"
+version = "0.1.0"
+description = "Read-only incremental index and API for Codex session rollouts"
+readme = "README.md"
+authors = [
+    { name = "negative-nilgiri", email = "299461584+negative-nilgiri@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.128,<1",
+    "uvicorn>=0.40,<1",
+]
+
+[project.scripts]
+viewer = "session_viewer_backend.cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=9,<10",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "session_viewer_backend"

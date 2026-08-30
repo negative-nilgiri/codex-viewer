@@ -1,0 +1,15 @@
+# Viewer backend
+
+FastAPI and standard-library SQLite backend for the Codex Sessions Viewer.
+
+```bash
+uv sync
+uv run pytest
+uv run viewer --help
+uv run uvicorn session_viewer_backend.api:app --reload
+```
+
+Configuration:
+
+- `VIEWER_DATABASE`, default `/data/viewer.sqlite3`
+- `VIEWER_SESSIONS_ROOT`, default `/sessions`
