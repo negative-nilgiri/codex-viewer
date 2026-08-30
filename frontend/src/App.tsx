@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   fetchMessages,
   fetchSessions,
   syncSession,
-  type MessagePage,
+  type Message,
   type SessionSummary,
 } from './api'
 import './App.css'
 
-const PAGE_SIZE = 30
+const BLOCK_SIZE = 30
+const MAX_CACHED_BLOCKS = 7
+
+type BlockStatus = 'loading' | 'error'
 
 function displayTime(value: string | null) {
   if (!value) return 'Unknown time'
@@ -16,16 +20,268 @@ function displayTime(value: string | null) {
   return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString()
 }
 
+function sessionIdentity(session: SessionSummary) {
+  return `${session.profile}:${session.session_id}`
+}
+
+function blockStartFor(index: number) {
+  return Math.floor(index / BLOCK_SIZE) * BLOCK_SIZE
+}
+
+function Transcript({
+  session,
+  onSynced,
+}: {
+  session: SessionSummary
+  onSynced: () => Promise<void>
+}) {
+  const virtuoso = useRef<VirtuosoHandle>(null)
+  const blocksRef = useRef(new Map<number, Message[]>())
+  const accessOrder = useRef<number[]>([])
+  const requests = useRef(new Map<number, AbortController>())
+  const mounted = useRef(false)
+  const [blocks, setBlocks] = useState(new Map<number, Message[]>())
+  const [statuses, setStatuses] = useState(new Map<number, BlockStatus>())
+  const [total, setTotal] = useState(session.message_count)
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: -1 })
+  const [syncing, setSyncing] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [newMessages, setNewMessages] = useState(0)
+
+  useEffect(() => {
+    mounted.current = true
+    const activeRequests = requests.current
+    return () => {
+      mounted.current = false
+      activeRequests.forEach((controller) => controller.abort())
+      activeRequests.clear()
+    }
+  }, [])
+
+  const touchBlock = useCallback((start: number) => {
+    accessOrder.current = [
+      ...accessOrder.current.filter((candidate) => candidate !== start),
+      start,
+    ]
+  }, [])
+
+  const loadBlock = useCallback(
+    (start: number, retry = false) => {
+      if (start < 0 || start >= total) return
+      if (!retry && blocksRef.current.has(start)) {
+        touchBlock(start)
+        return
+      }
+      if (requests.current.has(start)) return
+
+      const controller = new AbortController()
+      requests.current.set(start, controller)
+      setStatuses((current) => {
+        const next = new Map(current)
+        next.set(start, 'loading')
+        return next
+      })
+
+      fetchMessages(session, start, BLOCK_SIZE, controller.signal)
+        .then((page) => {
+          if (!mounted.current) return
+          touchBlock(start)
+          const next = new Map(blocksRef.current)
+          next.set(start, page.items)
+          while (accessOrder.current.length > MAX_CACHED_BLOCKS) {
+            const evicted = accessOrder.current.shift()
+            if (evicted !== undefined) next.delete(evicted)
+          }
+          blocksRef.current = next
+          setBlocks(next)
+          setStatuses((current) => {
+            const updated = new Map(current)
+            updated.delete(start)
+            return updated
+          })
+        })
+        .catch((caught: unknown) => {
+          if (!mounted.current || controller.signal.aborted) return
+          console.error(`Could not load message block ${start}`, caught)
+          setStatuses((current) => {
+            const next = new Map(current)
+            next.set(start, 'error')
+            return next
+          })
+        })
+        .finally(() => {
+          if (requests.current.get(start) === controller) {
+            requests.current.delete(start)
+          }
+        })
+    },
+    [session, total, touchBlock],
+  )
+
+  const loadVisibleRange = useCallback(
+    ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
+      setVisibleRange({ start: startIndex, end: endIndex })
+      const first = blockStartFor(startIndex)
+      const last = blockStartFor(endIndex)
+      for (let start = first - BLOCK_SIZE; start <= last + BLOCK_SIZE; start += BLOCK_SIZE) {
+        if (start >= 0 && start < total) loadBlock(start)
+      }
+    },
+    [loadBlock, total],
+  )
+
+  function messageAt(index: number) {
+    const start = blockStartFor(index)
+    return blocks.get(start)?.[index - start]
+  }
+
+  function invalidateFrom(start: number) {
+    requests.current.forEach((controller, blockStart) => {
+      if (blockStart >= start) {
+        controller.abort()
+        requests.current.delete(blockStart)
+      }
+    })
+    accessOrder.current = accessOrder.current.filter((blockStart) => blockStart < start)
+    const next = new Map(blocksRef.current)
+    for (const blockStart of next.keys()) {
+      if (blockStart >= start) next.delete(blockStart)
+    }
+    blocksRef.current = next
+    setBlocks(next)
+  }
+
+  async function synchronize() {
+    setSyncing(true)
+    setNotice(null)
+    setError(null)
+    try {
+      const previousTotal = total
+      const result = await syncSession(session)
+      if (result.added_messages) {
+        invalidateFrom(blockStartFor(previousTotal))
+        setNewMessages(result.added_messages)
+      }
+      setTotal(result.message_count)
+      await onSynced()
+      setNotice(
+        result.added_messages
+          ? `Imported ${result.added_messages} new message${result.added_messages === 1 ? '' : 's'}.`
+          : 'Session is already up to date.',
+      )
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  function jumpTo(index: number) {
+    if (!total) return
+    loadBlock(blockStartFor(index))
+    virtuoso.current?.scrollToIndex({ index, align: index === 0 ? 'start' : 'end' })
+  }
+
+  function jumpToLatest() {
+    setNewMessages(0)
+    jumpTo(total - 1)
+  }
+
+  const visibleLabel =
+    visibleRange.end >= 0 && total
+      ? `${visibleRange.start + 1}–${Math.min(visibleRange.end + 1, total)} of ${total}`
+      : 'No visible messages'
+
+  return (
+    <>
+      <header className="session-header">
+        <div className="session-heading">
+          <span className="eyebrow">{session.profile}</span>
+          <h2>{session.title}</h2>
+          <p>
+            <code>{session.session_id}</code>
+            {session.workspace ? ` · ${session.workspace}` : ''}
+          </p>
+        </div>
+        <div className="session-actions">
+          <span className="range-indicator">{visibleLabel}</span>
+          <button onClick={() => jumpTo(0)} type="button">Beginning</button>
+          <button onClick={jumpToLatest} type="button">Latest</button>
+          <button disabled={syncing} onClick={synchronize} type="button">
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+        </div>
+      </header>
+
+      {error && <div className="status status--error">{error}</div>}
+      {notice && <div className="status">{notice}</div>}
+      {newMessages > 0 && (
+        <button className="new-messages" onClick={jumpToLatest} type="button">
+          {newMessages} new message{newMessages === 1 ? '' : 's'} · jump to latest
+        </button>
+      )}
+
+      <div className="virtual-transcript">
+        {total ? (
+          <Virtuoso
+            ref={virtuoso}
+            totalCount={total}
+            rangeChanged={loadVisibleRange}
+            increaseViewportBy={{ top: 500, bottom: 800 }}
+            defaultItemHeight={180}
+            computeItemKey={(index) => `${sessionIdentity(session)}:message:${index + 1}`}
+            itemContent={(index) => {
+              const message = messageAt(index)
+              const start = blockStartFor(index)
+              const status = statuses.get(start)
+              if (!message) {
+                return (
+                  <div className="message-slot">
+                    <div className={`message-placeholder${status === 'error' ? ' message-placeholder--error' : ''}`}>
+                      {status === 'error' ? (
+                        <>
+                          <span>Messages {start + 1}–{Math.min(start + BLOCK_SIZE, total)} failed to load.</span>
+                          <button onClick={() => loadBlock(start, true)} type="button">Retry</button>
+                        </>
+                      ) : (
+                        <span>Loading message {index + 1}…</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div className="message-slot">
+                  <article className={`message message--${message.role}`}>
+                    <header>
+                      <strong>
+                        [{message.message_index}] {message.role === 'assistant' ? 'AGENT' : 'USER'}
+                      </strong>
+                      <time>{displayTime(message.timestamp)}</time>
+                    </header>
+                    <pre>{message.markdown}</pre>
+                  </article>
+                </div>
+              )
+            }}
+          />
+        ) : (
+          <div className="empty-transcript">
+            <h2>No visible messages</h2>
+            <p>This rollout has not produced a user or assistant message yet.</p>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [selected, setSelected] = useState<SessionSummary | null>(null)
-  const [page, setPage] = useState<MessagePage | null>(null)
-  const [start, setStart] = useState(0)
   const [loadingSessions, setLoadingSessions] = useState(true)
-  const [loadingMessages, setLoadingMessages] = useState(true)
-  const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
 
   async function refreshSessions() {
     const loaded = await fetchSessions()
@@ -33,10 +289,9 @@ function App() {
     setSelected((current) => {
       if (!current) return loaded[0] ?? null
       return (
-        loaded.find(
-          (item) =>
-            item.profile === current.profile && item.session_id === current.session_id,
-        ) ?? loaded[0] ?? null
+        loaded.find((item) => sessionIdentity(item) === sessionIdentity(current)) ??
+        loaded[0] ??
+        null
       )
     })
   }
@@ -60,67 +315,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!selected) {
-      return
-    }
-    let active = true
-    fetchMessages(selected, start, PAGE_SIZE)
-      .then((loaded) => {
-        if (active) setPage(loaded)
-      })
-      .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught))
-      })
-      .finally(() => {
-        if (active) setLoadingMessages(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [selected, start])
-
-  function chooseSession(session: SessionSummary) {
-    setSelected(session)
-    setStart(0)
-    setPage(null)
-    setLoadingMessages(true)
-    setError(null)
-    setNotice(null)
-  }
-
-  function changePage(nextStart: number) {
-    setLoadingMessages(true)
-    setStart(nextStart)
-  }
-
-  async function synchronize() {
-    if (!selected) return
-    setSyncing(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const result = await syncSession(selected)
-      await refreshSessions()
-      const nextStart = Math.min(start, Math.max(0, result.message_count - 1))
-      setStart(nextStart)
-      const refreshed = await fetchMessages(selected, nextStart, PAGE_SIZE)
-      setPage(refreshed)
-      setNotice(
-        result.added_messages
-          ? `Imported ${result.added_messages} new message${result.added_messages === 1 ? '' : 's'}.`
-          : 'Session is already up to date.',
-      )
-    } catch (caught: unknown) {
-      setError(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setSyncing(false)
-    }
-  }
-
-  const shownFrom = page && page.items.length ? page.items[0].message_index : 0
-  const shownTo = page && page.items.length ? page.items.at(-1)!.message_index : 0
-
   return (
     <main className="app-shell">
       <aside className="session-sidebar">
@@ -128,6 +322,7 @@ function App() {
           <span className="eyebrow">Local archive</span>
           <h1>Codex sessions</h1>
         </div>
+        {error && <div className="status status--error">{error}</div>}
         {sessions.length === 0 && !loadingSessions ? (
           <div className="empty-sidebar">
             <p>No sessions have been imported yet.</p>
@@ -136,14 +331,12 @@ function App() {
         ) : (
           <nav aria-label="Imported sessions">
             {sessions.map((session) => {
-              const active =
-                selected?.profile === session.profile &&
-                selected.session_id === session.session_id
+              const active = selected && sessionIdentity(selected) === sessionIdentity(session)
               return (
                 <button
                   className={`session-link${active ? ' session-link--active' : ''}`}
-                  key={`${session.profile}:${session.session_id}`}
-                  onClick={() => chooseSession(session)}
+                  key={sessionIdentity(session)}
+                  onClick={() => setSelected(session)}
                   type="button"
                 >
                   <strong>{session.title}</strong>
@@ -158,63 +351,15 @@ function App() {
 
       <section className="transcript">
         {selected ? (
-          <>
-            <header className="session-header">
-              <div>
-                <span className="eyebrow">{selected.profile}</span>
-                <h2>{selected.title}</h2>
-                <p>
-                  <code>{selected.session_id}</code>
-                  {selected.workspace ? ` · ${selected.workspace}` : ''}
-                </p>
-              </div>
-              <button disabled={syncing} onClick={synchronize} type="button">
-                {syncing ? 'Syncing…' : 'Sync now'}
-              </button>
-            </header>
-
-            {error && <div className="status status--error">{error}</div>}
-            {notice && <div className="status">{notice}</div>}
-
-            <div className="message-list" aria-busy={loadingMessages}>
-              {page?.items.map((message) => (
-                <article className={`message message--${message.role}`} key={message.message_index}>
-                  <header>
-                    <strong>[{message.message_index}] {message.role === 'assistant' ? 'AGENT' : 'USER'}</strong>
-                    <time>{displayTime(message.timestamp)}</time>
-                  </header>
-                  <pre>{message.markdown}</pre>
-                </article>
-              ))}
-              {loadingMessages && <div className="loading">Loading messages…</div>}
-            </div>
-
-            {page && (
-              <footer className="pagination">
-                <button
-                  disabled={start === 0 || loadingMessages}
-                  onClick={() => changePage(Math.max(0, start - PAGE_SIZE))}
-                  type="button"
-                >
-                  Previous
-                </button>
-                <span>
-                  {page.total ? `${shownFrom}–${shownTo} of ${page.total}` : 'No visible messages'}
-                </span>
-                <button
-                  disabled={start + page.items.length >= page.total || loadingMessages}
-                  onClick={() => changePage(start + page.items.length)}
-                  type="button"
-                >
-                  Next
-                </button>
-              </footer>
-            )}
-          </>
+          <Transcript
+            key={sessionIdentity(selected)}
+            session={selected}
+            onSynced={refreshSessions}
+          />
         ) : (
           <div className="empty-transcript">
             <h2>Import a session to begin</h2>
-            <p>The viewer only reads sessions you explicitly synchronize in this first milestone.</p>
+            <p>The viewer only reads sessions you explicitly synchronize.</p>
           </div>
         )}
       </section>

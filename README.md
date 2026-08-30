@@ -1,9 +1,9 @@
 # Codex Sessions Viewer
 
-A local, read-only viewer for Codex rollout JSONL files. The first milestone
+A local, read-only viewer for Codex rollout JSONL files. The viewer
 incrementally stores visible user and assistant messages in SQLite, exposes
-bounded pages through FastAPI, and displays them with a small React application
-served by Caddy.
+bounded ranges through FastAPI, and displays them in a virtualized React
+transcript served by Caddy.
 
 The rollout files remain the source of truth. They are mounted read-only and
 are never modified by the viewer.
@@ -39,8 +39,10 @@ Import one session using a complete UUID or unique prefix:
 docker compose exec api viewer sync codex_2 019fdbaf
 ```
 
-Open <http://localhost:8080> and reload the session list. The browser only
-requests 30 messages at a time.
+Open <http://localhost:8080>. The browser loads 30-message blocks around the
+visible viewport and keeps at most seven blocks (roughly 210 messages) in its
+in-memory cache. Use **Beginning** and **Latest** to move through a long session
+without downloading the entire transcript.
 
 Useful checks:
 
@@ -70,26 +72,27 @@ final line is left for the next sync. If the rollout is replaced or truncated,
 only that session is rebuilt.
 
 The UI's **Sync now** button invokes the same importer for the currently open
-session. Repeating a sync is idempotent. Tool calls, tool outputs, reasoning,
-and injected context are not stored.
+session. Repeating a sync is idempotent. If new messages are imported, the
+current reading position remains stable and a button offers to jump to the new
+tail. Tool calls, tool outputs, reasoning, and injected context are not stored.
 
 The current milestone intentionally supports modern `event_msg` user and agent
 messages only. Legacy message formats, manager coordination events, Markdown
-HTML rendering, Mermaid, syntax highlighting, folding, and virtual scrolling
-are later milestones.
+HTML rendering, Mermaid, syntax highlighting, and folding are later
+milestones. Message bodies are deliberately shown as raw Markdown for now.
 
 ## Tests
 
 Run backend tests in Docker:
 
 ```bash
-docker compose run --rm backend-tests
+docker compose run --build --rm backend-tests
 ```
 
 Run the frontend lint and production build in Docker:
 
 ```bash
-docker compose run --rm frontend-check
+docker compose run --build --rm frontend-check
 ```
 
 For faster local development, the equivalent uv and npm commands are:

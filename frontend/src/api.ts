@@ -61,9 +61,10 @@ export function fetchMessages(
   session: SessionSummary,
   start: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<MessagePage> {
   const query = new URLSearchParams({ start: String(start), limit: String(limit) })
-  return request<MessagePage>(`${sessionPath(session)}/messages?${query}`)
+  return request<MessagePage>(`${sessionPath(session)}/messages?${query}`, { signal })
 }
 
 export function syncSession(session: SessionSummary): Promise<SyncResult> {

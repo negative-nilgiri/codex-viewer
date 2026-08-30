@@ -1,7 +1,8 @@
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .session-sidebar {
@@ -75,15 +76,18 @@
 }
 
 .transcript {
+  position: relative;
+  height: 100vh;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .session-header {
-  position: sticky;
+  flex: 0 0 auto;
   z-index: 2;
-  top: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -101,6 +105,30 @@
   margin: 0.5rem 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.session-heading {
+  min-width: 0;
+}
+
+.session-heading p {
+  overflow-wrap: anywhere;
+}
+
+.session-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.range-indicator {
+  margin-right: 0.25rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 button {
@@ -123,14 +151,20 @@ button:disabled {
   opacity: 0.5;
 }
 
-.message-list {
-  width: min(100% - 3rem, 70rem);
+.virtual-transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.message-slot {
+  box-sizing: border-box;
+  width: min(100%, 73rem);
   margin: 0 auto;
-  padding: 1rem 0 3rem;
+  padding: 0.75rem 1.5rem;
 }
 
 .message {
-  margin: 1.5rem 0;
+  margin: 0;
 }
 
 .message > header {
@@ -175,21 +209,35 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.pagination {
-  position: sticky;
-  bottom: 0;
-  padding: 0.8rem 1.5rem;
+.message-placeholder {
+  min-height: 7rem;
+  padding: 1rem;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 1rem;
-  border-top: 1px solid var(--border);
-  background: var(--background);
-  font-size: 0.8rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.3rem;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+
+.message-placeholder--error {
+  color: var(--error);
+  background: var(--error-background);
+}
+
+.new-messages {
+  position: absolute;
+  z-index: 3;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  border-color: var(--accent);
+  box-shadow: 0 0.35rem 1.2rem rgb(0 0 0 / 18%);
 }
 
 .status,
-.loading,
 .empty-sidebar,
 .empty-transcript {
   color: var(--muted);
@@ -203,11 +251,6 @@ button:disabled {
 .status--error {
   color: var(--error);
   background: var(--error-background);
-}
-
-.loading {
-  padding: 2rem;
-  text-align: center;
 }
 
 .empty-sidebar {
@@ -229,22 +272,32 @@ button:disabled {
 
 @media (max-width: 760px) {
   .app-shell {
+    grid-template-rows: minmax(10rem, 35vh) minmax(0, 1fr);
     grid-template-columns: 1fr;
   }
 
   .session-sidebar {
     position: static;
     height: auto;
-    max-height: 35vh;
+    max-height: none;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 
   .session-header {
-    position: static;
+    padding: 1rem;
+    flex-wrap: wrap;
   }
 
-  .message-list {
-    width: min(100% - 1.5rem, 70rem);
+  .transcript {
+    height: auto;
+  }
+
+  .session-actions {
+    justify-content: flex-start;
+  }
+
+  .message-slot {
+    padding: 0.5rem 0.75rem;
   }
 }
