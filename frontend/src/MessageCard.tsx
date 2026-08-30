@@ -74,9 +74,17 @@ function displayTime(value: string | null) {
   return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString()
 }
 
-export const MessageCard = memo(function MessageCard({ message }: { message: Message }) {
+export const MessageCard = memo(function MessageCard({
+  collapsed,
+  message,
+  onToggle,
+}: {
+  collapsed: boolean
+  message: Message
+  onToggle: (messageIndex: number) => void
+}) {
   return (
-    <article className={`message message--${message.role}`}>
+    <article className={`message message--${message.role}${collapsed ? ' message--collapsed' : ''}`}>
       <header>
         <strong>
           [{message.message_index}] {message.role === 'assistant' ? 'AGENT' : 'USER'}
@@ -88,21 +96,32 @@ export const MessageCard = memo(function MessageCard({ message }: { message: Mes
             label="Copy message as Markdown"
             text={message.markdown}
           />
+          <button
+            aria-expanded={!collapsed}
+            className="fold-button"
+            onClick={() => onToggle(message.message_index)}
+            title={collapsed ? 'Expand message' : 'Collapse message'}
+            type="button"
+          >
+            {collapsed ? 'Expand' : 'Fold'}
+          </button>
         </div>
       </header>
-      <div className="markdown-body">
-        <Markdown
-          components={markdownComponents}
-          rehypePlugins={[
-            rehypeRaw,
-            [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
-          ]}
-          remarkPlugins={[remarkGfm]}
-          urlTransform={(url) => url}
-        >
-          {message.markdown}
-        </Markdown>
-      </div>
+      {!collapsed && (
+        <div className="markdown-body">
+          <Markdown
+            components={markdownComponents}
+            rehypePlugins={[
+              rehypeRaw,
+              [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
+            ]}
+            remarkPlugins={[remarkGfm]}
+            urlTransform={(url) => url}
+          >
+            {message.markdown}
+          </Markdown>
+        </div>
+      )}
     </article>
   )
 })

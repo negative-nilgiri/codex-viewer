@@ -75,11 +75,12 @@ only that session is rebuilt.
 The UI's **Sync now** button invokes the same importer for the currently open
 session. Repeating a sync is idempotent. If new messages are imported, the
 current reading position remains stable and a button offers to jump to the new
-tail. Tool calls, tool outputs, reasoning, and injected context are not stored.
+tail. Successful synchronization notices disappear after five seconds. Tool
+calls, tool outputs, reasoning, and injected context are not stored.
 
 The current milestone intentionally supports modern `event_msg` user and agent
 messages only. Legacy message formats, manager coordination events, Markdown
-folding, and client-side transcript editing are later milestones.
+and client-side transcript editing are later milestones.
 
 ## Message rendering
 
@@ -97,6 +98,16 @@ Raw HTML is intentionally not sanitized because this viewer is designed for a
 single user's trusted local rollouts. Keep the Caddy port bound to localhost,
 as it is in the supplied Compose configuration, and do not use this deployment
 to display untrusted session files.
+
+## Transcript controls
+
+Each message can be folded independently from its header. **Collapse all** and
+**Expand all** apply the same choice across the session, including messages
+that are not currently mounted by the virtual list. The fold state is stored in
+the browser for each profile and session; it does not modify SQLite or the
+rollout. Collapsed messages skip Markdown and Mermaid rendering entirely.
+
+The session header also provides a copy button for the complete session ID.
 
 ## Tests
 

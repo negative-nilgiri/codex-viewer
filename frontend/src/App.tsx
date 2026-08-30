@@ -7,6 +7,7 @@ import {
   type Message,
   type SessionSummary,
 } from './api'
+import { CopyButton } from './components/CopyButton'
 import { MessageCard } from './MessageCard'
 import './App.css'
 
@@ -14,6 +15,11 @@ const BLOCK_SIZE = 30
 const MAX_CACHED_BLOCKS = 7
 
 type BlockStatus = 'loading' | 'error'
+
+type FoldState = {
+  defaultCollapsed: boolean
+  exceptions: Set<number>
+}
 
 function displayTime(value: string | null) {
   if (!value) return 'Unknown time'
@@ -27,6 +33,33 @@ function sessionIdentity(session: SessionSummary) {
 
 function blockStartFor(index: number) {
   return Math.floor(index / BLOCK_SIZE) * BLOCK_SIZE
+}
+
+function foldStorageKey(session: SessionSummary) {
+  return `codex-sessions-viewer:folds:${sessionIdentity(session)}`
+}
+
+function loadFoldState(session: SessionSummary): FoldState {
+  try {
+    const stored = localStorage.getItem(foldStorageKey(session))
+    if (!stored) return { defaultCollapsed: false, exceptions: new Set() }
+    const parsed = JSON.parse(stored) as {
+      defaultCollapsed?: unknown
+      exceptions?: unknown
+    }
+    const exceptions = Array.isArray(parsed.exceptions)
+      ? parsed.exceptions.filter(
+          (value): value is number => Number.isInteger(value) && value > 0,
+        )
+      : []
+    return {
+      defaultCollapsed: parsed.defaultCollapsed === true,
+      exceptions: new Set(exceptions),
+    }
+  } catch (error) {
+    console.warn('Could not restore folded messages', error)
+    return { defaultCollapsed: false, exceptions: new Set() }
+  }
 }
 
 function Transcript({
@@ -49,6 +82,7 @@ function Transcript({
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [newMessages, setNewMessages] = useState(0)
+  const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
 
   useEffect(() => {
     mounted.current = true
@@ -58,6 +92,35 @@ function Transcript({
       activeRequests.forEach((controller) => controller.abort())
       activeRequests.clear()
     }
+  }, [])
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(null), 5000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        foldStorageKey(session),
+        JSON.stringify({
+          defaultCollapsed: foldState.defaultCollapsed,
+          exceptions: [...foldState.exceptions],
+        }),
+      )
+    } catch (error) {
+      console.warn('Could not persist folded messages', error)
+    }
+  }, [foldState, session])
+
+  const toggleMessage = useCallback((messageIndex: number) => {
+    setFoldState((current) => {
+      const exceptions = new Set(current.exceptions)
+      if (exceptions.has(messageIndex)) exceptions.delete(messageIndex)
+      else exceptions.add(messageIndex)
+      return { ...current, exceptions }
+    })
   }, [])
 
   const touchBlock = useCallback((start: number) => {
@@ -201,14 +264,33 @@ function Transcript({
           <span className="eyebrow">{session.profile}</span>
           <h2>{session.title}</h2>
           <p>
-            <code>{session.session_id}</code>
-            {session.workspace ? ` · ${session.workspace}` : ''}
+            <span className="session-id">
+              <code>{session.session_id}</code>
+              <CopyButton
+                className="copy-button--session"
+                label="Copy session ID"
+                text={session.session_id}
+              />
+            </span>
+            {session.workspace && <span> · {session.workspace}</span>}
           </p>
         </div>
         <div className="session-actions">
           <span className="range-indicator">{visibleLabel}</span>
           <button onClick={() => jumpTo(0)} type="button">Beginning</button>
           <button onClick={jumpToLatest} type="button">Latest</button>
+          <button
+            onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
+            type="button"
+          >
+            Collapse all
+          </button>
+          <button
+            onClick={() => setFoldState({ defaultCollapsed: false, exceptions: new Set() })}
+            type="button"
+          >
+            Expand all
+          </button>
           <button disabled={syncing} onClick={synchronize} type="button">
             {syncing ? 'Syncing…' : 'Sync now'}
           </button>
@@ -252,7 +334,17 @@ function Transcript({
                   </div>
                 )
               }
-              return <div className="message-slot"><MessageCard message={message} /></div>
+              const collapsed =
+                foldState.defaultCollapsed !== foldState.exceptions.has(message.message_index)
+              return (
+                <div className="message-slot">
+                  <MessageCard
+                    collapsed={collapsed}
+                    message={message}
+                    onToggle={toggleMessage}
+                  />
+                </div>
+              )
             }}
           />
         ) : (
