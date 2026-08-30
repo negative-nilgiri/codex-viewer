@@ -7,6 +7,7 @@ import {
   type Message,
   type SessionSummary,
 } from './api'
+import { MessageCard } from './MessageCard'
 import './App.css'
 
 const BLOCK_SIZE = 30
@@ -251,19 +252,7 @@ function Transcript({
                   </div>
                 )
               }
-              return (
-                <div className="message-slot">
-                  <article className={`message message--${message.role}`}>
-                    <header>
-                      <strong>
-                        [{message.message_index}] {message.role === 'assistant' ? 'AGENT' : 'USER'}
-                      </strong>
-                      <time>{displayTime(message.timestamp)}</time>
-                    </header>
-                    <pre>{message.markdown}</pre>
-                  </article>
-                </div>
-              )
+              return <div className="message-slot"><MessageCard message={message} /></div>
             }}
           />
         ) : (

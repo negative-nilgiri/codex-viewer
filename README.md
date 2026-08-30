@@ -3,7 +3,8 @@
 A local, read-only viewer for Codex rollout JSONL files. The viewer
 incrementally stores visible user and assistant messages in SQLite, exposes
 bounded ranges through FastAPI, and displays them in a virtualized React
-transcript served by Caddy.
+transcript served by Caddy. Visible messages are rendered as GitHub-flavored
+Markdown with syntax highlighting and Mermaid diagrams.
 
 The rollout files remain the source of truth. They are mounted read-only and
 are never modified by the viewer.
@@ -78,8 +79,24 @@ tail. Tool calls, tool outputs, reasoning, and injected context are not stored.
 
 The current milestone intentionally supports modern `event_msg` user and agent
 messages only. Legacy message formats, manager coordination events, Markdown
-HTML rendering, Mermaid, syntax highlighting, and folding are later
-milestones. Message bodies are deliberately shown as raw Markdown for now.
+folding, and client-side transcript editing are later milestones.
+
+## Message rendering
+
+User and agent messages use the same Markdown pipeline. It supports headings,
+lists, tables, task lists, blockquotes, links, inline code, fenced code, and raw
+HTML. Fenced code is syntax-highlighted when its language is recognized. Every
+code block has a copy button, and the button in a message header copies that
+message's original Markdown.
+
+A fenced block marked `mermaid` is rendered as a diagram. Mermaid is downloaded
+by the browser only when a visible message needs it. Invalid diagrams show the
+rendering error and retain their source text instead of disappearing.
+
+Raw HTML is intentionally not sanitized because this viewer is designed for a
+single user's trusted local rollouts. Keep the Caddy port bound to localhost,
+as it is in the supplied Compose configuration, and do not use this deployment
+to display untrusted session files.
 
 ## Tests
 
