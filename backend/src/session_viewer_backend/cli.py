@@ -3,6 +3,7 @@ from dataclasses import asdict
 import json
 
 from .config import Settings
+from .discovery import discover_sessions
 from .rollout import RolloutError
 from .sync import sync_session
 
@@ -13,6 +14,14 @@ def parse_args(argv=None):
     sync_parser = commands.add_parser("sync", help="Incrementally index one session")
     sync_parser.add_argument("profile", help="Mounted Codex profile, for example codex_2")
     sync_parser.add_argument("session_id", help="Full session UUID or unique prefix")
+    discover_parser = commands.add_parser(
+        "discover", help="Catalog mounted rollouts without indexing their messages"
+    )
+    discover_parser.add_argument(
+        "profile",
+        nargs="?",
+        help="Optional mounted Codex profile; omit to scan every profile",
+    )
     return parser.parse_args(argv)
 
 
@@ -30,3 +39,13 @@ def main(argv=None):
         except (OSError, RolloutError, ValueError) as error:
             raise SystemExit(str(error)) from error
         print(json.dumps(asdict(result), indent=2))
+    elif args.command == "discover":
+        try:
+            result = discover_sessions(
+                settings.database_path,
+                settings.sessions_root,
+                args.profile,
+            )
+        except (OSError, RolloutError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        print(json.dumps(result.as_dict(), indent=2))

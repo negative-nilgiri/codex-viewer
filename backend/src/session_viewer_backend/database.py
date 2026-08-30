@@ -3,7 +3,7 @@ from contextlib import closing
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     message_count INTEGER NOT NULL DEFAULT 0,
     last_synced_at TEXT,
     sync_error TEXT,
+    source_present INTEGER NOT NULL DEFAULT 1,
+    last_discovered_at TEXT,
     PRIMARY KEY (profile, session_id),
     UNIQUE (profile, rollout_path)
 );
@@ -69,6 +71,23 @@ def initialize(database_path: Path):
             if row is None:
                 connection.execute(
                     "INSERT INTO schema_info(version) VALUES (?)", (SCHEMA_VERSION,)
+                )
+            elif row["version"] == 1:
+                columns = {
+                    item["name"]
+                    for item in connection.execute("PRAGMA table_info(sessions)")
+                }
+                if "source_present" not in columns:
+                    connection.execute(
+                        "ALTER TABLE sessions "
+                        "ADD COLUMN source_present INTEGER NOT NULL DEFAULT 1"
+                    )
+                if "last_discovered_at" not in columns:
+                    connection.execute(
+                        "ALTER TABLE sessions ADD COLUMN last_discovered_at TEXT"
+                    )
+                connection.execute(
+                    "UPDATE schema_info SET version = ?", (SCHEMA_VERSION,)
                 )
             elif row["version"] != SCHEMA_VERSION:
                 raise RuntimeError(

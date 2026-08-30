@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
+  discoverSessions,
   fetchMessages,
   fetchSessions,
   syncSession,
@@ -291,8 +292,12 @@ function Transcript({
           >
             Expand all
           </button>
-          <button disabled={syncing} onClick={synchronize} type="button">
-            {syncing ? 'Syncing…' : 'Sync now'}
+          <button
+            disabled={syncing || !session.source_present}
+            onClick={synchronize}
+            type="button"
+          >
+            {syncing ? 'Syncing…' : session.indexed ? 'Sync now' : 'Index session'}
           </button>
         </div>
       </header>
@@ -347,6 +352,16 @@ function Transcript({
               )
             }}
           />
+        ) : !session.source_present ? (
+          <div className="empty-transcript">
+            <h2>Source unavailable</h2>
+            <p>The indexed catalog entry remains, but its rollout is not currently mounted.</p>
+          </div>
+        ) : !session.indexed ? (
+          <div className="empty-transcript">
+            <h2>Session not indexed</h2>
+            <p>Use <strong>Index session</strong> to import its visible messages on demand.</p>
+          </div>
         ) : (
           <div className="empty-transcript">
             <h2>No visible messages</h2>
@@ -362,6 +377,8 @@ function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [selected, setSelected] = useState<SessionSummary | null>(null)
   const [loadingSessions, setLoadingSessions] = useState(true)
+  const [discovering, setDiscovering] = useState(false)
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function refreshSessions() {
@@ -379,7 +396,11 @@ function App() {
 
   useEffect(() => {
     let active = true
-    fetchSessions()
+    discoverSessions()
+      .catch((caught: unknown) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
+      .then(() => fetchSessions())
       .then((loaded) => {
         if (!active) return
         setSessions(loaded)
@@ -396,21 +417,53 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!catalogNotice) return
+    const timer = window.setTimeout(() => setCatalogNotice(null), 5000)
+    return () => window.clearTimeout(timer)
+  }, [catalogNotice])
+
+  async function rescanSessions() {
+    setDiscovering(true)
+    setCatalogNotice(null)
+    setError(null)
+    try {
+      const result = await discoverSessions()
+      await refreshSessions()
+      setCatalogNotice(
+        `Found ${result.found} session${result.found === 1 ? '' : 's'} · ` +
+        `${result.added} new · ${result.unavailable} unavailable.`,
+      )
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="session-sidebar">
         <div className="sidebar-heading">
-          <span className="eyebrow">Local archive</span>
-          <h1>Codex sessions</h1>
+          <div>
+            <span className="eyebrow">Local archive</span>
+            <h1>Codex sessions</h1>
+          </div>
+          <button disabled={discovering} onClick={rescanSessions} type="button">
+            {discovering ? 'Scanning…' : 'Rescan'}
+          </button>
         </div>
         {error && <div className="status status--error">{error}</div>}
-        {sessions.length === 0 && !loadingSessions ? (
+        {catalogNotice && <div className="status">{catalogNotice}</div>}
+        {sessions.length === 0 && loadingSessions ? (
+          <div className="empty-sidebar">Scanning mounted sessions…</div>
+        ) : sessions.length === 0 ? (
           <div className="empty-sidebar">
-            <p>No sessions have been imported yet.</p>
-            <code>viewer sync codex_2 SESSION_ID</code>
+            <p>No session rollouts were discovered.</p>
+            <code>viewer discover</code>
           </div>
         ) : (
-          <nav aria-label="Imported sessions">
+          <nav aria-label="Discovered sessions">
             {sessions.map((session) => {
               const active = selected && sessionIdentity(selected) === sessionIdentity(session)
               return (
@@ -421,7 +474,14 @@ function App() {
                   type="button"
                 >
                   <strong>{session.title}</strong>
-                  <span>{session.profile} · {session.message_count} messages</span>
+                  <span className={!session.source_present ? 'session-state--unavailable' : ''}>
+                    {session.profile} ·{' '}
+                    {!session.source_present
+                      ? 'Source unavailable'
+                      : session.indexed
+                        ? `${session.message_count} messages`
+                        : 'Not indexed'}
+                  </span>
                   <time>{displayTime(session.last_activity_at)}</time>
                 </button>
               )

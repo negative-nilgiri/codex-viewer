@@ -20,7 +20,17 @@
 }
 
 .sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   border-bottom: 1px solid var(--border);
+}
+
+.sidebar-heading button {
+  flex: 0 0 auto;
+  padding: 0.42rem 0.6rem;
+  font-size: 0.75rem;
 }
 
 .sidebar-heading h1,
@@ -73,6 +83,10 @@
 .session-link time {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.session-link .session-state--unavailable {
+  color: var(--error);
 }
 
 .transcript {

@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from .config import Settings
 from .database import initialize
+from .discovery import discover_sessions
 from .repository import get_messages, get_session, list_sessions
 from .rollout import RolloutError
 from .sync import sync_session
@@ -29,6 +30,18 @@ def create_app(settings: Settings | None = None):
     @application.get("/api/sessions")
     def sessions(limit: int = Query(default=100, ge=1, le=500)):
         return {"items": list_sessions(configured.database_path, limit)}
+
+    @application.post("/api/sessions/discover")
+    def discover(profile: str | None = Query(default=None)):
+        try:
+            result = discover_sessions(
+                configured.database_path,
+                configured.sessions_root,
+                profile,
+            )
+        except (OSError, RolloutError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return result.as_dict()
 
     @application.get("/api/sessions/{profile}/{session_id}")
     def session(profile: str, session_id: str):

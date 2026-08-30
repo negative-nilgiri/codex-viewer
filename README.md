@@ -34,7 +34,14 @@ Build and start FastAPI and Caddy:
 docker compose up --build -d
 ```
 
-Import one session using a complete UUID or unique prefix:
+Opening the application automatically catalogs the mounted rollouts. Discovery
+does not import complete message histories. To run the same scan explicitly:
+
+```bash
+docker compose exec api viewer discover
+```
+
+Index one session using a complete UUID or unique prefix:
 
 ```bash
 docker compose exec api viewer sync codex_2 019fdbaf
@@ -44,6 +51,29 @@ Open <http://localhost:8080>. The browser loads 30-message blocks around the
 visible viewport and keeps at most seven blocks (roughly 210 messages) in its
 in-memory cache. Use **Beginning** and **Latest** to move through a long session
 without downloading the entire transcript.
+
+## Session discovery
+
+Discovery scans every mounted `codex_*` profile and adds its rollout files to
+the catalog. For a new or still-unindexed rollout, it reads at most the first
+256 KiB to find a useful title, workspace, and creation timestamp. It never
+imports messages or advances an incremental sync cursor. Already-indexed
+rollouts are refreshed from filesystem metadata without reopening their
+contents.
+
+The sidebar runs discovery when the viewer opens and provides **Rescan** for
+sessions created later. A discovered session is marked **Not indexed** until
+its **Index session** button is used. If a previously cataloged rollout is no
+longer mounted, it is marked **Source unavailable**; existing indexed messages
+are retained.
+
+Limit discovery to one profile when using the CLI:
+
+```bash
+docker compose exec api viewer discover codex_2
+```
+
+Periodic background discovery and synchronization are intentionally deferred.
 
 Useful checks:
 
@@ -136,17 +166,20 @@ npm run build
 
 Backend tests cover first import, no-op resynchronization, append-only import,
 partial final lines, rollout truncation, ignored tool events, cross-profile
-UUID isolation, and API pagination limits.
+UUID isolation, API pagination limits, shallow discovery, missing sources, and
+migration of an existing schema-v1 catalog.
 
 ## API in milestone 1
 
 ```text
 GET  /api/health
 GET  /api/sessions
+POST /api/sessions/discover
 GET  /api/sessions/{profile}/{session_id}
 GET  /api/sessions/{profile}/{session_id}/messages?start=0&limit=30
 POST /api/sessions/{profile}/{session_id}/sync
 ```
 
-The list contains sessions already imported into SQLite. Automatic discovery
-and background synchronization are intentionally deferred.
+The list contains discovered catalog entries, including rollouts whose messages
+have not yet been indexed. Background synchronization is intentionally
+deferred.

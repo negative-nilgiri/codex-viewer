@@ -7,6 +7,9 @@ export type SessionSummary = {
   last_activity_at: string | null
   message_count: number
   last_synced_at: string | null
+  source_present: boolean
+  last_discovered_at: string | null
+  indexed: boolean
 }
 
 export type Message = {
@@ -33,6 +36,14 @@ export type SyncResult = {
   rebuilt: boolean
 }
 
+export type DiscoveryResult = {
+  profiles: string[]
+  found: number
+  added: number
+  refreshed: number
+  unavailable: number
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
@@ -53,8 +64,12 @@ function sessionPath(session: SessionSummary) {
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {
-  const response = await request<{ items: SessionSummary[] }>('/api/sessions')
+  const response = await request<{ items: SessionSummary[] }>('/api/sessions?limit=500')
   return response.items
+}
+
+export function discoverSessions(): Promise<DiscoveryResult> {
+  return request<DiscoveryResult>('/api/sessions/discover', { method: 'POST' })
 }
 
 export function fetchMessages(

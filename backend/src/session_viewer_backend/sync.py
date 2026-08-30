@@ -168,7 +168,8 @@ def sync_session(
                 SET rollout_path = ?, title = ?, workspace = ?, created_at = ?,
                     last_activity_at = ?, last_complete_offset = ?, source_size = ?,
                     source_mtime_ns = ?, source_device = ?, source_inode = ?,
-                    message_count = ?, last_synced_at = ?, sync_error = NULL
+                    message_count = ?, last_synced_at = ?, sync_error = NULL,
+                    source_present = 1, last_discovered_at = ?
                 WHERE profile = ? AND session_id = ?
                 """,
                 (
@@ -183,6 +184,7 @@ def sync_session(
                     final_stat.st_dev,
                     final_stat.st_ino,
                     message_count,
+                    synced_at,
                     synced_at,
                     profile,
                     session_id,
