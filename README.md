@@ -123,6 +123,17 @@ current reading position remains stable and a button offers to jump to the new
 tail. Successful synchronization notices disappear after five seconds. Tool
 calls, tool outputs, reasoning, and injected context are not stored.
 
+The compact **Watch** toggle polls only the currently open, indexed session
+every two seconds. Polls use the same byte-offset importer, so a no-op reads
+only from the last complete JSONL offset and produces no notification. New
+messages automatically keep the view at the live tail when it was already at
+the bottom. If you have scrolled upward to read, the current position is kept
+and a small indicator appears beside **Latest**. The indicator disappears as
+soon as the newest message enters the visible range. Switching sessions,
+closing the page, or disabling the toggle stops that watcher; no other session
+is synchronized in the background. The preference is remembered per session
+in browser storage.
+
 The current milestone intentionally supports modern `event_msg` user and agent
 messages only. Legacy message formats, manager coordination events, Markdown
 and client-side transcript editing are later milestones.

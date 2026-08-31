@@ -201,6 +201,36 @@
   white-space: nowrap;
 }
 
+.watch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.watch-indicator {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.watch-toggle--active {
+  border-color: #27864f;
+  color: #1d6e40;
+  background: color-mix(in srgb, #36a968 12%, var(--surface));
+}
+
+.watch-toggle--active .watch-indicator {
+  background: #2ea761;
+  box-shadow: 0 0 0.45rem rgb(46 167 97 / 65%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .watch-toggle--active {
+    color: #73d79b;
+  }
+}
+
 button {
   padding: 0.34rem 0.55rem;
   border: 1px solid var(--border-strong);
@@ -506,13 +536,27 @@ button:disabled {
   background: var(--error-background);
 }
 
-.new-messages {
+.latest-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.latest-indicator {
   position: absolute;
-  z-index: 3;
-  right: 1.5rem;
-  bottom: 1.5rem;
-  border-color: var(--accent);
-  box-shadow: 0 0.35rem 1.2rem rgb(0 0 0 / 18%);
+  top: -0.32rem;
+  right: -0.32rem;
+  display: grid;
+  width: 0.85rem;
+  height: 0.85rem;
+  place-items: center;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  color: white;
+  background: var(--accent);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .status,

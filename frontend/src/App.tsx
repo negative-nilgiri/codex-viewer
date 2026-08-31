@@ -75,6 +75,10 @@ function foldStorageKey(session: SessionSummary) {
   return `codex-sessions-viewer:folds:${sessionIdentity(session)}`
 }
 
+function watchStorageKey(session: SessionSummary) {
+  return `codex-sessions-viewer:watch:${sessionIdentity(session)}`
+}
+
 function loadFoldState(session: SessionSummary): FoldState {
   try {
     const stored = localStorage.getItem(foldStorageKey(session))
@@ -109,6 +113,9 @@ function Transcript({
   const blocksRef = useRef(new Map<number, Message[]>())
   const accessOrder = useRef<number[]>([])
   const requests = useRef(new Map<number, AbortController>())
+  const syncInFlight = useRef(false)
+  const atLiveTail = useRef(false)
+  const followAfterSync = useRef(false)
   const mounted = useRef(false)
   const [blocks, setBlocks] = useState(new Map<number, Message[]>())
   const [statuses, setStatuses] = useState(new Map<number, BlockStatus>())
@@ -119,6 +126,9 @@ function Transcript({
   const [error, setError] = useState<string | null>(null)
   const [newMessages, setNewMessages] = useState(0)
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
+  const [watching, setWatching] = useState(
+    () => localStorage.getItem(watchStorageKey(session)) === 'true',
+  )
 
   useEffect(() => {
     mounted.current = true
@@ -149,6 +159,10 @@ function Transcript({
       console.warn('Could not persist folded messages', error)
     }
   }, [foldState, session])
+
+  useEffect(() => {
+    localStorage.setItem(watchStorageKey(session), String(watching))
+  }, [session, watching])
 
   const toggleMessage = useCallback((messageIndex: number) => {
     setFoldState((current) => {
@@ -222,6 +236,7 @@ function Transcript({
   const loadVisibleRange = useCallback(
     ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
       setVisibleRange({ start: startIndex, end: endIndex })
+      if (endIndex >= total - 1) setNewMessages(0)
       const first = blockStartFor(startIndex)
       const last = blockStartFor(endIndex)
       for (let start = first - BLOCK_SIZE; start <= last + BLOCK_SIZE; start += BLOCK_SIZE) {
@@ -236,7 +251,7 @@ function Transcript({
     return blocks.get(start)?.[index - start]
   }
 
-  function invalidateFrom(start: number) {
+  const invalidateFrom = useCallback((start: number) => {
     requests.current.forEach((controller, blockStart) => {
       if (blockStart >= start) {
         controller.abort()
@@ -250,32 +265,62 @@ function Transcript({
     }
     blocksRef.current = next
     setBlocks(next)
-  }
+  }, [])
 
-  async function synchronize() {
-    setSyncing(true)
-    setNotice(null)
+  const synchronize = useCallback(async (automatic = false) => {
+    if (syncInFlight.current) return
+    syncInFlight.current = true
+    if (!automatic) {
+      setSyncing(true)
+      setNotice(null)
+    }
     setError(null)
     try {
       const previousTotal = total
       const result = await syncSession(session)
       if (result.added_messages) {
         invalidateFrom(blockStartFor(previousTotal))
-        setNewMessages(result.added_messages)
+        if (automatic && atLiveTail.current) {
+          followAfterSync.current = true
+        } else {
+          setNewMessages((current) => current + result.added_messages)
+        }
       }
       setTotal(result.message_count)
-      await onSynced()
-      setNotice(
-        result.added_messages
-          ? `Imported ${result.added_messages} new message${result.added_messages === 1 ? '' : 's'}.`
-          : 'Session is already up to date.',
-      )
+      if (result.added_messages || !automatic) await onSynced()
+      if (!automatic) {
+        setNotice(
+          result.added_messages
+            ? `Imported ${result.added_messages} new message${result.added_messages === 1 ? '' : 's'}.`
+            : 'Session is already up to date.',
+        )
+      }
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
-      setSyncing(false)
+      syncInFlight.current = false
+      if (!automatic) setSyncing(false)
     }
-  }
+  }, [invalidateFrom, onSynced, session, total])
+
+  const watchActive = watching && session.indexed && session.source_present
+
+  useEffect(() => {
+    if (!watchActive) return
+    const timer = window.setInterval(() => void synchronize(true), 2000)
+    return () => window.clearInterval(timer)
+  }, [synchronize, watchActive])
+
+  useEffect(() => {
+    if (!followAfterSync.current || !total) return
+    followAfterSync.current = false
+    setNewMessages(0)
+    const frame = window.requestAnimationFrame(() => {
+      loadBlock(blockStartFor(total - 1))
+      virtuoso.current?.scrollToIndex({ index: total - 1, align: 'end' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [loadBlock, total])
 
   function jumpTo(index: number) {
     if (!total) return
@@ -314,7 +359,19 @@ function Transcript({
         <div className="session-actions">
           <span className="range-indicator">{visibleLabel}</span>
           <button onClick={() => jumpTo(0)} type="button">Beginning</button>
-          <button onClick={jumpToLatest} type="button">Latest</button>
+          <span className="latest-control">
+            <button onClick={jumpToLatest} type="button">Latest</button>
+            {newMessages > 0 && (
+              <span
+                aria-label={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
+                className="latest-indicator"
+                role="status"
+                title={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
+              >
+                !
+              </span>
+            )}
+          </span>
           <button
             onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
             type="button"
@@ -329,27 +386,36 @@ function Transcript({
           </button>
           <button
             disabled={syncing || !session.source_present}
-            onClick={synchronize}
+            onClick={() => void synchronize(false)}
             type="button"
           >
             {syncing ? 'Syncing…' : session.indexed ? 'Sync now' : 'Index session'}
+          </button>
+          <button
+            aria-pressed={watchActive}
+            className={`watch-toggle${watchActive ? ' watch-toggle--active' : ''}`}
+            disabled={!session.indexed || !session.source_present}
+            onClick={() => setWatching((current) => !current)}
+            title="Watch only this open session"
+            type="button"
+          >
+            <span aria-hidden="true" className="watch-indicator" />
+            {watchActive ? 'Watching' : 'Watch'}
           </button>
         </div>
       </header>
 
       {error && <div className="status status--error">{error}</div>}
       {notice && <div className="status">{notice}</div>}
-      {newMessages > 0 && (
-        <button className="new-messages" onClick={jumpToLatest} type="button">
-          {newMessages} new message{newMessages === 1 ? '' : 's'} · jump to latest
-        </button>
-      )}
 
       <div className="virtual-transcript">
         {total ? (
           <Virtuoso
             ref={virtuoso}
             totalCount={total}
+            atBottomStateChange={(atBottom) => {
+              atLiveTail.current = atBottom
+            }}
             rangeChanged={loadVisibleRange}
             increaseViewportBy={{ top: 500, bottom: 800 }}
             defaultItemHeight={180}
