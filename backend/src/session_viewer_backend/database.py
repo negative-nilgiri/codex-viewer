@@ -3,7 +3,7 @@ from contextlib import closing
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT NOT NULL,
     rollout_path TEXT NOT NULL,
     title TEXT NOT NULL DEFAULT 'Untitled session',
+    title_override TEXT,
     workspace TEXT,
     created_at TEXT,
     last_activity_at TEXT,
@@ -72,24 +73,32 @@ def initialize(database_path: Path):
                 connection.execute(
                     "INSERT INTO schema_info(version) VALUES (?)", (SCHEMA_VERSION,)
                 )
-            elif row["version"] == 1:
+            else:
+                version = row["version"]
+                if version not in {1, 2, SCHEMA_VERSION}:
+                    raise RuntimeError(
+                        f"Unsupported database schema {version}; "
+                        f"expected {SCHEMA_VERSION}"
+                    )
                 columns = {
                     item["name"]
                     for item in connection.execute("PRAGMA table_info(sessions)")
                 }
-                if "source_present" not in columns:
-                    connection.execute(
-                        "ALTER TABLE sessions "
-                        "ADD COLUMN source_present INTEGER NOT NULL DEFAULT 1"
-                    )
-                if "last_discovered_at" not in columns:
-                    connection.execute(
-                        "ALTER TABLE sessions ADD COLUMN last_discovered_at TEXT"
-                    )
-                connection.execute(
-                    "UPDATE schema_info SET version = ?", (SCHEMA_VERSION,)
-                )
-            elif row["version"] != SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"Unsupported database schema {row['version']}; expected {SCHEMA_VERSION}"
-                )
+                if version == 1:
+                    if "source_present" not in columns:
+                        connection.execute(
+                            "ALTER TABLE sessions "
+                            "ADD COLUMN source_present INTEGER NOT NULL DEFAULT 1"
+                        )
+                    if "last_discovered_at" not in columns:
+                        connection.execute(
+                            "ALTER TABLE sessions ADD COLUMN last_discovered_at TEXT"
+                        )
+                    version = 2
+                if version == 2:
+                    if "title_override" not in columns:
+                        connection.execute(
+                            "ALTER TABLE sessions ADD COLUMN title_override TEXT"
+                        )
+                    version = 3
+                connection.execute("UPDATE schema_info SET version = ?", (version,))

@@ -34,6 +34,7 @@ def main(argv=None):
                 settings.database_path,
                 settings.sessions_root,
                 args.profile,
+                settings.titles_path,
                 args.session_id,
             )
         except (OSError, RolloutError, ValueError) as error:

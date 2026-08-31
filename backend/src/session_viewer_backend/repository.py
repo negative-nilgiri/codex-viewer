@@ -12,6 +12,8 @@ def row_dict(row):
         result["source_present"] = bool(result["source_present"])
     if "last_synced_at" in result:
         result["indexed"] = result["last_synced_at"] is not None
+    if "title_overridden" in result:
+        result["title_overridden"] = bool(result["title_overridden"])
     return result
 
 
@@ -20,7 +22,9 @@ def list_sessions(database_path: Path, limit=100):
     with closing(connect(database_path)) as connection:
         rows = connection.execute(
             """
-            SELECT profile, session_id, title, workspace, created_at,
+            SELECT profile, session_id, COALESCE(title_override, title) AS title,
+                   title_override IS NOT NULL AS title_overridden,
+                   workspace, created_at,
                    last_activity_at, message_count, last_synced_at,
                    source_present, last_discovered_at
             FROM sessions
@@ -38,7 +42,9 @@ def get_session(database_path: Path, profile: str, session_id: str):
     with closing(connect(database_path)) as connection:
         row = connection.execute(
             """
-            SELECT profile, session_id, title, workspace, created_at,
+            SELECT profile, session_id, COALESCE(title_override, title) AS title,
+                   title_override IS NOT NULL AS title_overridden,
+                   workspace, created_at,
                    last_activity_at, message_count, last_synced_at, sync_error,
                    source_present, last_discovered_at
             FROM sessions WHERE profile = ? AND session_id = ?

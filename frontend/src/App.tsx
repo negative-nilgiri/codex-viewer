@@ -22,10 +22,45 @@ type FoldState = {
   exceptions: Set<number>
 }
 
-function displayTime(value: string | null) {
-  if (!value) return 'Unknown time'
+function displayClockTime(value: string | null) {
+  if (!value) return 'Unknown'
   const parsed = new Date(value)
-  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString()
+  return Number.isNaN(parsed.valueOf())
+    ? value
+    : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function activityDay(value: string | null) {
+  if (!value) return { key: 'unknown', label: 'Unknown activity date' }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.valueOf())) return { key: value, label: value }
+  const day = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const difference = Math.round((todayStart.valueOf() - day.valueOf()) / 86_400_000)
+  const key = `${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`
+  if (difference === 0) return { key, label: 'Today' }
+  if (difference === 1) return { key, label: 'Yesterday' }
+  return {
+    key,
+    label: parsed.toLocaleDateString([], {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }),
+  }
+}
+
+function groupSessions(sessions: SessionSummary[]) {
+  const groups: Array<{ key: string; label: string; sessions: SessionSummary[] }> = []
+  for (const session of sessions) {
+    const day = activityDay(session.last_activity_at ?? session.created_at)
+    const current = groups.at(-1)
+    if (current?.key === day.key) current.sessions.push(session)
+    else groups.push({ ...day, sessions: [session] })
+  }
+  return groups
 }
 
 function sessionIdentity(session: SessionSummary) {
@@ -380,6 +415,9 @@ function App() {
   const [discovering, setDiscovering] = useState(false)
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('codex-sessions-viewer:sidebar-collapsed') === 'true',
+  )
 
   async function refreshSessions() {
     const loaded = await fetchSessions()
@@ -423,6 +461,13 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [catalogNotice])
 
+  useEffect(() => {
+    localStorage.setItem(
+      'codex-sessions-viewer:sidebar-collapsed',
+      String(sidebarCollapsed),
+    )
+  }, [sidebarCollapsed])
+
   async function rescanSessions() {
     setDiscovering(true)
     setCatalogNotice(null)
@@ -441,52 +486,86 @@ function App() {
     }
   }
 
+  const sessionGroups = groupSessions(sessions)
+
   return (
-    <main className="app-shell">
-      <aside className="session-sidebar">
+    <main className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}`}>
+      <aside className={`session-sidebar${sidebarCollapsed ? ' session-sidebar--collapsed' : ''}`}>
         <div className="sidebar-heading">
-          <div>
-            <span className="eyebrow">Local archive</span>
-            <h1>Codex sessions</h1>
+          {!sidebarCollapsed && (
+            <div>
+              <span className="eyebrow">Recently active</span>
+              <h1>Sessions</h1>
+            </div>
+          )}
+          <div className="sidebar-heading-actions">
+            {!sidebarCollapsed && (
+              <button
+                aria-label="Rescan sessions"
+                disabled={discovering}
+                onClick={rescanSessions}
+                title="Rescan sessions"
+                type="button"
+              >
+                {discovering ? '…' : '↻'}
+              </button>
+            )}
+            <button
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => setSidebarCollapsed((current) => !current)}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              type="button"
+            >
+              {sidebarCollapsed ? '›' : '‹'}
+            </button>
           </div>
-          <button disabled={discovering} onClick={rescanSessions} type="button">
-            {discovering ? 'Scanning…' : 'Rescan'}
-          </button>
         </div>
-        {error && <div className="status status--error">{error}</div>}
-        {catalogNotice && <div className="status">{catalogNotice}</div>}
-        {sessions.length === 0 && loadingSessions ? (
-          <div className="empty-sidebar">Scanning mounted sessions…</div>
-        ) : sessions.length === 0 ? (
-          <div className="empty-sidebar">
-            <p>No session rollouts were discovered.</p>
-            <code>viewer discover</code>
-          </div>
-        ) : (
-          <nav aria-label="Discovered sessions">
-            {sessions.map((session) => {
-              const active = selected && sessionIdentity(selected) === sessionIdentity(session)
-              return (
-                <button
-                  className={`session-link${active ? ' session-link--active' : ''}`}
-                  key={sessionIdentity(session)}
-                  onClick={() => setSelected(session)}
-                  type="button"
-                >
-                  <strong>{session.title}</strong>
-                  <span className={!session.source_present ? 'session-state--unavailable' : ''}>
-                    {session.profile} ·{' '}
-                    {!session.source_present
-                      ? 'Source unavailable'
-                      : session.indexed
-                        ? `${session.message_count} messages`
-                        : 'Not indexed'}
-                  </span>
-                  <time>{displayTime(session.last_activity_at)}</time>
-                </button>
-              )
-            })}
-          </nav>
+        {!sidebarCollapsed && (
+          <>
+            {error && <div className="status status--error">{error}</div>}
+            {catalogNotice && <div className="status">{catalogNotice}</div>}
+            {sessions.length === 0 && loadingSessions ? (
+              <div className="empty-sidebar">Scanning mounted sessions…</div>
+            ) : sessions.length === 0 ? (
+              <div className="empty-sidebar">
+                <p>No session rollouts were discovered.</p>
+                <code>viewer discover</code>
+              </div>
+            ) : (
+              <nav aria-label="Recently active sessions">
+                {sessionGroups.map((group) => (
+                  <section className="session-day" key={group.key}>
+                    <h2>{group.label}</h2>
+                    {group.sessions.map((session) => {
+                      const active = selected && sessionIdentity(selected) === sessionIdentity(session)
+                      return (
+                        <button
+                          className={`session-link${active ? ' session-link--active' : ''}`}
+                          key={sessionIdentity(session)}
+                          onClick={() => setSelected(session)}
+                          type="button"
+                        >
+                          <strong>{session.title}</strong>
+                          <div className="session-meta">
+                            <span className={!session.source_present ? 'session-state--unavailable' : ''}>
+                              {session.profile} ·{' '}
+                              {!session.source_present
+                                ? 'Unavailable'
+                                : session.indexed
+                                  ? `${session.message_count} messages`
+                                  : 'Not indexed'}
+                            </span>
+                            <time>{displayClockTime(session.last_activity_at)}</time>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </section>
+                ))}
+              </nav>
+            )}
+          </>
         )}
       </aside>
 

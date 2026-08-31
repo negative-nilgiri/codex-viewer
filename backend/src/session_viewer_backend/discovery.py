@@ -57,6 +57,24 @@ def profile_names(sessions_root: Path, requested_profile: str | None):
     )
 
 
+def load_title_overrides(path: Path | None):
+    if path is None or not path.exists():
+        return {}
+    with path.open() as source:
+        parsed = json.load(source)
+    if not isinstance(parsed, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in parsed.items()
+    ):
+        raise ValueError(
+            f"{path} must contain a JSON object mapping session IDs to titles"
+        )
+    return {
+        session_id.lower(): normalized_title(title, width=200)
+        for session_id, title in parsed.items()
+    }
+
+
 def inspect_prefix(path: Path, expected_id: str):
     title = f"Session {expected_id[:8]}"
     workspace = None
@@ -95,9 +113,11 @@ def discover_sessions(
     database_path: Path,
     sessions_root: Path,
     requested_profile: str | None = None,
+    titles_path: Path | None = None,
 ):
     initialize(database_path)
     profiles = profile_names(sessions_root, requested_profile)
+    title_overrides = load_title_overrides(titles_path)
     with closing(connect(database_path)) as connection:
         existing_rows = connection.execute(
             "SELECT profile, session_id, last_synced_at FROM sessions"
@@ -156,7 +176,7 @@ def discover_sessions(
                         """
                         UPDATE sessions
                         SET rollout_path = ?, source_present = 1,
-                            last_discovered_at = ?,
+                            last_discovered_at = ?, title_override = ?,
                             title = CASE WHEN last_synced_at IS NULL THEN ? ELSE title END,
                             workspace = CASE WHEN last_synced_at IS NULL THEN ? ELSE workspace END,
                             created_at = CASE WHEN last_synced_at IS NULL THEN ? ELSE created_at END,
@@ -167,6 +187,7 @@ def discover_sessions(
                         (
                             str(item.rollout_path),
                             discovered_at,
+                            title_overrides.get(item.session_id),
                             item.title,
                             item.workspace,
                             item.created_at,
@@ -181,9 +202,9 @@ def discover_sessions(
                         """
                         INSERT INTO sessions(
                             profile, session_id, rollout_path, title, workspace,
-                            created_at, last_activity_at, source_present,
+                            created_at, last_activity_at, title_override, source_present,
                             last_discovered_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                         """,
                         (
                             item.profile,
@@ -193,7 +214,23 @@ def discover_sessions(
                             item.workspace,
                             item.created_at,
                             item.approximate_activity_at,
+                            title_overrides.get(item.session_id),
                             discovered_at,
+                        ),
+                    )
+            for profile in profiles:
+                rows = connection.execute(
+                    "SELECT session_id FROM sessions WHERE profile = ?",
+                    (profile,),
+                ).fetchall()
+                for row in rows:
+                    connection.execute(
+                        "UPDATE sessions SET title_override = ? "
+                        "WHERE profile = ? AND session_id = ?",
+                        (
+                            title_overrides.get(row["session_id"]),
+                            profile,
+                            row["session_id"],
                         ),
                     )
             placeholders = ",".join("?" for _ in profiles)

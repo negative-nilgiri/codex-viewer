@@ -1,8 +1,12 @@
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+  grid-template-columns: 18rem minmax(0, 1fr);
   overflow: hidden;
+}
+
+.app-shell--sidebar-collapsed {
+  grid-template-columns: 2.75rem minmax(0, 1fr);
 }
 
 .session-sidebar {
@@ -14,23 +18,32 @@
   background: var(--surface);
 }
 
-.sidebar-heading,
-.session-header {
-  padding: 1.5rem;
-}
-
 .sidebar-heading {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  min-height: 3.4rem;
+  padding: 0.65rem 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
-.sidebar-heading button {
+.sidebar-heading-actions {
+  display: flex;
+  margin-left: auto;
+  gap: 0.3rem;
+}
+
+.sidebar-heading-actions button {
   flex: 0 0 auto;
-  padding: 0.42rem 0.6rem;
-  font-size: 0.75rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 1rem;
 }
 
 .sidebar-heading h1,
@@ -41,22 +54,23 @@
 }
 
 .sidebar-heading h1 {
-  font-size: 1.35rem;
+  font-size: 1rem;
+  font-weight: 650;
 }
 
 .eyebrow {
   color: var(--muted);
   font-size: 0.7rem;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .session-link {
   width: 100%;
-  padding: 1rem 1.25rem;
+  padding: 0.58rem 0.75rem;
   display: grid;
-  gap: 0.28rem;
+  gap: 0.2rem;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-left: 0.25rem solid transparent;
@@ -77,16 +91,45 @@
   color: var(--heading);
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 560;
 }
 
-.session-link span,
-.session-link time {
+.session-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.session-meta span,
+.session-meta time {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.67rem;
+  font-weight: 450;
 }
 
 .session-link .session-state--unavailable {
   color: var(--error);
+}
+
+.session-day > h2 {
+  position: sticky;
+  z-index: 2;
+  top: 3.35rem;
+  margin: 0;
+  padding: 0.38rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 94%, var(--background));
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.session-sidebar--collapsed {
+  overflow: hidden;
 }
 
 .transcript {
@@ -100,10 +143,11 @@
 }
 
 .session-header {
+  padding: 0.65rem 1rem;
   flex: 0 0 auto;
   z-index: 2;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   border-bottom: 1px solid var(--border);
@@ -112,16 +156,22 @@
 }
 
 .session-header h2 {
-  font-size: 1.45rem;
+  overflow: hidden;
+  font-size: 1.05rem;
+  font-weight: 620;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-header p {
-  margin: 0.5rem 0 0;
+  margin: 0.25rem 0 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
 }
 
 .session-heading {
+  flex: 1 1 22rem;
   min-width: 0;
 }
 
@@ -141,24 +191,25 @@
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .range-indicator {
   margin-right: 0.25rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   white-space: nowrap;
 }
 
 button {
-  padding: 0.55rem 0.8rem;
+  padding: 0.34rem 0.55rem;
   border: 1px solid var(--border-strong);
   border-radius: 0.35rem;
   color: var(--heading);
   background: var(--surface);
   font: inherit;
-  font-weight: 700;
+  font-size: 0.76rem;
+  font-weight: 580;
   cursor: pointer;
 }
 
@@ -471,7 +522,8 @@ button:disabled {
 }
 
 .status {
-  padding: 0.65rem 1.5rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.74rem;
   background: var(--selected);
 }
 
@@ -503,6 +555,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .app-shell--sidebar-collapsed {
+    grid-template-rows: 2.75rem minmax(0, 1fr);
+  }
+
   .session-sidebar {
     position: static;
     height: auto;
@@ -512,7 +568,7 @@ button:disabled {
   }
 
   .session-header {
-    padding: 1rem;
+    padding: 0.65rem 0.75rem;
     flex-wrap: wrap;
   }
 
@@ -522,6 +578,10 @@ button:disabled {
 
   .session-actions {
     justify-content: flex-start;
+  }
+
+  .session-sidebar--collapsed {
+    height: 2.75rem;
   }
 
   .message > header {

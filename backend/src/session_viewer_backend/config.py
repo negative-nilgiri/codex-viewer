@@ -7,6 +7,7 @@ from pathlib import Path
 class Settings:
     database_path: Path
     sessions_root: Path
+    titles_path: Path | None = None
 
     @classmethod
     def from_environment(cls):
@@ -16,5 +17,10 @@ class Settings:
             ),
             sessions_root=Path(
                 os.environ.get("VIEWER_SESSIONS_ROOT", "/sessions")
+            ),
+            titles_path=(
+                Path(value)
+                if (value := os.environ.get("VIEWER_TITLES_FILE"))
+                else None
             ),
         )

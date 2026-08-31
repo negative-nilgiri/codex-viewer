@@ -2,6 +2,7 @@ export type SessionSummary = {
   profile: string
   session_id: string
   title: string
+  title_overridden: boolean
   workspace: string | null
   created_at: string | null
   last_activity_at: string | null

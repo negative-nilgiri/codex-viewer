@@ -38,6 +38,7 @@ def create_app(settings: Settings | None = None):
                 configured.database_path,
                 configured.sessions_root,
                 profile,
+                configured.titles_path,
             )
         except (OSError, RolloutError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error

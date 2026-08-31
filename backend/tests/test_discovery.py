@@ -48,14 +48,17 @@ def make_rollout(tmp_path: Path):
 def test_discovery_is_shallow_idempotent_and_preserves_missing_session(tmp_path):
     database = tmp_path / "viewer.sqlite3"
     sessions_root, rollout = make_rollout(tmp_path)
+    titles = tmp_path / "session_titles.json"
+    titles.write_text(json.dumps({SESSION_ID: "Persistent custom title"}))
 
-    first = discover_sessions(database, sessions_root)
-    second = discover_sessions(database, sessions_root)
+    first = discover_sessions(database, sessions_root, titles_path=titles)
+    second = discover_sessions(database, sessions_root, titles_path=titles)
 
     assert (first.found, first.added) == (1, 1)
     assert (second.found, second.added, second.refreshed) == (1, 0, 1)
     session = list_sessions(database)[0]
-    assert session["title"] == "Discovered **title**"
+    assert session["title"] == "Persistent custom title"
+    assert session["title_overridden"] is True
     assert session["workspace"] == "discovery-test"
     assert session["indexed"] is False
     assert session["source_present"] is True
@@ -63,13 +66,16 @@ def test_discovery_is_shallow_idempotent_and_preserves_missing_session(tmp_path)
 
     sync_session(database, sessions_root, "codex_2", SESSION_ID)
     rollout.unlink()
-    missing = discover_sessions(database, sessions_root)
+    titles.write_text("{}")
+    missing = discover_sessions(database, sessions_root, titles_path=titles)
     session = list_sessions(database)[0]
 
     assert missing.unavailable == 1
     assert session["indexed"] is True
     assert session["source_present"] is False
     assert session["message_count"] == 1
+    assert session["title"] == "Discovered **title**"
+    assert session["title_overridden"] is False
 
 
 def test_initialize_migrates_a_version_one_catalog(tmp_path):
@@ -108,5 +114,5 @@ def test_initialize_migrates_a_version_one_catalog(tmp_path):
         columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(sessions)")
         }
-    assert version == 2
-    assert {"source_present", "last_discovered_at"} <= columns
+    assert version == 3
+    assert {"source_present", "last_discovered_at", "title_override"} <= columns

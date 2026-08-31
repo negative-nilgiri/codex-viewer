@@ -9,6 +9,7 @@ services:
     environment:
       VIEWER_DATABASE: /data/viewer.sqlite3
       VIEWER_SESSIONS_ROOT: /sessions
+      VIEWER_TITLES_FILE: /config/session_titles.json
     volumes:
       - type: bind
         source: ${CODEX_1_SESSIONS_DIR:-../codex_1/sessions}
@@ -21,6 +22,10 @@ services:
       - type: volume
         source: viewer-data
         target: /data
+      - type: bind
+        source: ${SESSION_TITLES_FILE:-../session_titles.json}
+        target: /config/session_titles.json
+        read_only: true
     restart: unless-stopped
 
   web:

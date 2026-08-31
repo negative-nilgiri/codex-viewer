@@ -24,7 +24,9 @@ cp .env.example .env
 
 Then edit the two host paths in `.env`. They are mounted inside the API
 container as `/sessions/codex_1` and `/sessions/codex_2` with `read_only: true`.
-The rebuildable SQLite index is kept in the `viewer-data` Docker volume.
+Set `SESSION_TITLES_FILE` to the existing title-override JSON file. It is also
+mounted read-only. The rebuildable SQLite index is kept in the `viewer-data`
+Docker volume.
 
 ## Start the viewer
 
@@ -66,6 +68,19 @@ sessions created later. A discovered session is marked **Not indexed** until
 its **Index session** button is used. If a previously cataloged rollout is no
 longer mounted, it is marked **Source unavailable**; existing indexed messages
 are retained.
+
+Sessions are sorted only by latest recorded activity and separated into local
+calendar-day groups. The sidebar can be collapsed to a narrow rail; that choice
+is remembered in browser storage.
+
+Discovery applies persistent titles from `session_titles.json`. Automatic and
+custom titles are stored separately, so removing an override restores the
+title inferred from the rollout on the next rescan. The existing title command
+can still manage this file:
+
+```bash
+./sessions.py title 019fdbaf "Codex frontend UI"
+```
 
 Limit discovery to one profile when using the CLI:
 
@@ -166,8 +181,8 @@ npm run build
 
 Backend tests cover first import, no-op resynchronization, append-only import,
 partial final lines, rollout truncation, ignored tool events, cross-profile
-UUID isolation, API pagination limits, shallow discovery, missing sources, and
-migration of an existing schema-v1 catalog.
+UUID isolation, API pagination limits, shallow discovery, missing sources,
+schema migration, and persistent title overrides.
 
 ## API in milestone 1
 
