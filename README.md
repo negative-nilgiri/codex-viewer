@@ -119,8 +119,8 @@ only that session is rebuilt.
 
 The UI's **Sync now** button invokes the same importer for the currently open
 session. Repeating a sync is idempotent. If new messages are imported, the
-current reading position remains stable and a button offers to jump to the new
-tail. Successful synchronization notices disappear after five seconds. Tool
+current reading position remains stable and an indicator appears beside
+**Latest**. Successful synchronization notices disappear after five seconds. Tool
 calls, tool outputs, reasoning, and injected context are not stored.
 
 The compact **Watch** toggle polls only the currently open, indexed session
@@ -149,6 +149,13 @@ message's original Markdown.
 A fenced block marked `mermaid` is rendered as a diagram. Mermaid is downloaded
 by the browser only when a visible message needs it. Invalid diagrams show the
 rendering error and retain their source text instead of disappearing.
+
+Press **Ctrl+F** (or **Cmd+F** on macOS) to search the complete indexed session,
+including messages that are not mounted by the virtual list. The temporary
+search bar replaces the header actions while it is open. Enter and Shift+Enter
+move between matches, and Escape closes it. Search results scroll to and outline
+the matching message; the backend performs a literal, case-insensitive SQLite
+substring search rather than relying on the browser DOM.
 
 Raw HTML is intentionally not sanitized because this viewer is designed for a
 single user's trusted local rollouts. Keep the Caddy port bound to localhost,

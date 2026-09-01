@@ -45,6 +45,12 @@ export type DiscoveryResult = {
   unavailable: number
 }
 
+export type SearchResult = {
+  query: string
+  total: number
+  message_indexes: number[]
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
@@ -85,4 +91,13 @@ export function fetchMessages(
 
 export function syncSession(session: SessionSummary): Promise<SyncResult> {
   return request<SyncResult>(`${sessionPath(session)}/sync`, { method: 'POST' })
+}
+
+export function searchMessages(
+  session: SessionSummary,
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchResult> {
+  const parameters = new URLSearchParams({ q: query })
+  return request<SearchResult>(`${sessionPath(session)}/search?${parameters}`, { signal })
 }

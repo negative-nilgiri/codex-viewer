@@ -4,6 +4,7 @@ import {
   discoverSessions,
   fetchMessages,
   fetchSessions,
+  searchMessages,
   syncSession,
   type Message,
   type SessionSummary,
@@ -110,12 +111,14 @@ function Transcript({
   onSynced: () => Promise<void>
 }) {
   const virtuoso = useRef<VirtuosoHandle>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const blocksRef = useRef(new Map<number, Message[]>())
   const accessOrder = useRef<number[]>([])
   const requests = useRef(new Map<number, AbortController>())
   const syncInFlight = useRef(false)
   const atLiveTail = useRef(false)
   const followAfterSync = useRef(false)
+  const visibleRangeRef = useRef({ start: 0, end: -1 })
   const mounted = useRef(false)
   const [blocks, setBlocks] = useState(new Map<number, Message[]>())
   const [statuses, setStatuses] = useState(new Map<number, BlockStatus>())
@@ -125,6 +128,13 @@ function Transcript({
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [newMessages, setNewMessages] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<number[]>([])
+  const [searchResultIndex, setSearchResultIndex] = useState(-1)
+  const [searchTarget, setSearchTarget] = useState<number | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
     () => localStorage.getItem(watchStorageKey(session)) === 'true',
@@ -163,6 +173,36 @@ function Transcript({
   useEffect(() => {
     localStorage.setItem(watchStorageKey(session), String(watching))
   }, [session, watching])
+
+  useEffect(() => {
+    function handleFindShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        if (searchOpen) {
+          searchInput.current?.focus()
+          searchInput.current?.select()
+        } else {
+          setSearchOpen(true)
+        }
+      } else if (event.key === 'Escape' && searchOpen) {
+        event.preventDefault()
+        setSearchOpen(false)
+        setSearchTarget(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleFindShortcut)
+    return () => window.removeEventListener('keydown', handleFindShortcut)
+  }, [searchOpen])
+
+  useEffect(() => {
+    if (!searchOpen) return
+    const frame = window.requestAnimationFrame(() => {
+      searchInput.current?.focus()
+      searchInput.current?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [searchOpen])
 
   const toggleMessage = useCallback((messageIndex: number) => {
     setFoldState((current) => {
@@ -235,6 +275,7 @@ function Transcript({
 
   const loadVisibleRange = useCallback(
     ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) => {
+      visibleRangeRef.current = { start: startIndex, end: endIndex }
       setVisibleRange({ start: startIndex, end: endIndex })
       if (endIndex >= total - 1) setNewMessages(0)
       const first = blockStartFor(startIndex)
@@ -245,6 +286,53 @@ function Transcript({
     },
     [loadBlock, total],
   )
+
+  const revealSearchResult = useCallback(
+    (messageIndex: number) => {
+      const index = messageIndex - 1
+      setSearchTarget(messageIndex)
+      loadBlock(blockStartFor(index))
+      virtuoso.current?.scrollToIndex({ index, align: 'center' })
+    },
+    [loadBlock],
+  )
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.length) return
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setSearching(true)
+      setSearchError(null)
+      searchMessages(session, searchQuery, controller.signal)
+        .then((result) => {
+          const firstVisibleMessage = visibleRangeRef.current.start + 1
+          const following = result.message_indexes.findIndex(
+            (messageIndex) => messageIndex >= firstVisibleMessage,
+          )
+          const selectedResult = result.total ? (following >= 0 ? following : 0) : -1
+          setSearchResults(result.message_indexes)
+          setSearchResultIndex(selectedResult)
+          if (selectedResult >= 0) revealSearchResult(result.message_indexes[selectedResult])
+          else setSearchTarget(null)
+        })
+        .catch((caught: unknown) => {
+          if (caught instanceof DOMException && caught.name === 'AbortError') return
+          setSearchResults([])
+          setSearchResultIndex(-1)
+          setSearchTarget(null)
+          setSearchError(caught instanceof Error ? caught.message : String(caught))
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false)
+        })
+    }, 150)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [revealSearchResult, searchOpen, searchQuery, session])
 
   function messageAt(index: number) {
     const start = blockStartFor(index)
@@ -333,6 +421,29 @@ function Transcript({
     jumpTo(total - 1)
   }
 
+  function stepSearch(direction: 1 | -1) {
+    if (!searchResults.length) return
+    const next =
+      (searchResultIndex + direction + searchResults.length) % searchResults.length
+    setSearchResultIndex(next)
+    revealSearchResult(searchResults[next])
+  }
+
+  function closeSearch() {
+    setSearchOpen(false)
+    setSearchTarget(null)
+  }
+
+  function updateSearchQuery(query: string) {
+    setSearchQuery(query)
+    if (query.length) return
+    setSearchResults([])
+    setSearchResultIndex(-1)
+    setSearchTarget(null)
+    setSearching(false)
+    setSearchError(null)
+  }
+
   const visibleLabel =
     visibleRange.end >= 0 && total
       ? `${visibleRange.start + 1}–${Math.min(visibleRange.end + 1, total)} of ${total}`
@@ -356,53 +467,108 @@ function Transcript({
             {session.workspace && <span> · {session.workspace}</span>}
           </p>
         </div>
-        <div className="session-actions">
-          <span className="range-indicator">{visibleLabel}</span>
-          <button onClick={() => jumpTo(0)} type="button">Beginning</button>
-          <span className="latest-control">
-            <button onClick={jumpToLatest} type="button">Latest</button>
-            {newMessages > 0 && (
-              <span
-                aria-label={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
-                className="latest-indicator"
-                role="status"
-                title={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
-              >
-                !
-              </span>
-            )}
-          </span>
-          <button
-            onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
-            type="button"
-          >
-            Collapse all
-          </button>
-          <button
-            onClick={() => setFoldState({ defaultCollapsed: false, exceptions: new Set() })}
-            type="button"
-          >
-            Expand all
-          </button>
-          <button
-            disabled={syncing || !session.source_present}
-            onClick={() => void synchronize(false)}
-            type="button"
-          >
-            {syncing ? 'Syncing…' : session.indexed ? 'Sync now' : 'Index session'}
-          </button>
-          <button
-            aria-pressed={watchActive}
-            className={`watch-toggle${watchActive ? ' watch-toggle--active' : ''}`}
-            disabled={!session.indexed || !session.source_present}
-            onClick={() => setWatching((current) => !current)}
-            title="Watch only this open session"
-            type="button"
-          >
-            <span aria-hidden="true" className="watch-indicator" />
-            {watchActive ? 'Watching' : 'Watch'}
-          </button>
-        </div>
+        {searchOpen ? (
+          <div aria-label="Find in session" className="session-search" role="search">
+            <input
+              aria-label="Find in session"
+              maxLength={500}
+              onChange={(event) => updateSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  stepSearch(event.shiftKey ? -1 : 1)
+                } else if (event.key === 'Escape') {
+                  event.preventDefault()
+                  closeSearch()
+                }
+              }}
+              placeholder="Find in this session"
+              ref={searchInput}
+              type="search"
+              value={searchQuery}
+            />
+            <span aria-live="polite" className="search-count" title={searchError ?? undefined}>
+              {searchError
+                ? 'Search failed'
+                : searching
+                  ? 'Searching…'
+                  : !searchQuery
+                    ? '—'
+                    : searchResults.length
+                      ? `${searchResultIndex + 1} / ${searchResults.length}`
+                      : 'No matches'}
+            </span>
+            <button
+              aria-label="Previous match"
+              disabled={!searchResults.length}
+              onClick={() => stepSearch(-1)}
+              title="Previous match (Shift+Enter)"
+              type="button"
+            >
+              ↑
+            </button>
+            <button
+              aria-label="Next match"
+              disabled={!searchResults.length}
+              onClick={() => stepSearch(1)}
+              title="Next match (Enter)"
+              type="button"
+            >
+              ↓
+            </button>
+            <button aria-label="Close search" onClick={closeSearch} title="Close (Escape)" type="button">
+              ×
+            </button>
+          </div>
+        ) : (
+          <div className="session-actions">
+            <span className="range-indicator">{visibleLabel}</span>
+            <button onClick={() => jumpTo(0)} type="button">Beginning</button>
+            <span className="latest-control">
+              <button onClick={jumpToLatest} type="button">Latest</button>
+              {newMessages > 0 && (
+                <span
+                  aria-label={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
+                  className="latest-indicator"
+                  role="status"
+                  title={`${newMessages} new message${newMessages === 1 ? '' : 's'}`}
+                >
+                  !
+                </span>
+              )}
+            </span>
+            <button
+              onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
+              type="button"
+            >
+              Collapse all
+            </button>
+            <button
+              onClick={() => setFoldState({ defaultCollapsed: false, exceptions: new Set() })}
+              type="button"
+            >
+              Expand all
+            </button>
+            <button
+              disabled={syncing || !session.source_present}
+              onClick={() => void synchronize(false)}
+              type="button"
+            >
+              {syncing ? 'Syncing…' : session.indexed ? 'Sync now' : 'Index session'}
+            </button>
+            <button
+              aria-pressed={watchActive}
+              className={`watch-toggle${watchActive ? ' watch-toggle--active' : ''}`}
+              disabled={!session.indexed || !session.source_present}
+              onClick={() => setWatching((current) => !current)}
+              title="Watch only this open session"
+              type="button"
+            >
+              <span aria-hidden="true" className="watch-indicator" />
+              {watchActive ? 'Watching' : 'Watch'}
+            </button>
+          </div>
+        )}
       </header>
 
       {error && <div className="status status--error">{error}</div>}
@@ -443,7 +609,7 @@ function Transcript({
               const collapsed =
                 foldState.defaultCollapsed !== foldState.exceptions.has(message.message_index)
               return (
-                <div className="message-slot">
+                <div className={`message-slot${searchTarget === message.message_index ? ' message-slot--search-target' : ''}`}>
                   <MessageCard
                     collapsed={collapsed}
                     message={message}

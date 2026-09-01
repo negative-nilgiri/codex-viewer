@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from .config import Settings
 from .database import initialize
 from .discovery import discover_sessions
-from .repository import get_messages, get_session, list_sessions
+from .repository import get_messages, get_session, list_sessions, search_messages
 from .rollout import RolloutError
 from .sync import sync_session
 
@@ -61,6 +61,17 @@ def create_app(settings: Settings | None = None):
         result = get_messages(
             configured.database_path, profile, session_id, start, limit
         )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        return result
+
+    @application.get("/api/sessions/{profile}/{session_id}/search")
+    def search(
+        profile: str,
+        session_id: str,
+        q: str = Query(min_length=1, max_length=500),
+    ):
+        result = search_messages(configured.database_path, profile, session_id, q)
         if result is None:
             raise HTTPException(status_code=404, detail="Session is not indexed")
         return result

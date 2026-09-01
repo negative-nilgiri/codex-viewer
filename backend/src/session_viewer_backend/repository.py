@@ -79,3 +79,26 @@ def get_messages(database_path: Path, profile: str, session_id: str, start: int,
         "total": session["message_count"],
         "items": [dict(row) for row in rows],
     }
+
+
+def search_messages(database_path: Path, profile: str, session_id: str, query: str):
+    initialize(database_path)
+    with closing(connect(database_path)) as connection:
+        session = connection.execute(
+            "SELECT 1 FROM sessions WHERE profile = ? AND session_id = ?",
+            (profile, session_id),
+        ).fetchone()
+        if session is None:
+            return None
+        rows = connection.execute(
+            """
+            SELECT message_index
+            FROM messages
+            WHERE profile = ? AND session_id = ?
+              AND instr(lower(markdown), lower(?)) > 0
+            ORDER BY message_index
+            """,
+            (profile, session_id, query),
+        ).fetchall()
+    indexes = [row["message_index"] for row in rows]
+    return {"query": query, "total": len(indexes), "message_indexes": indexes}

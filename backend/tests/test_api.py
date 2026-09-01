@@ -60,3 +60,18 @@ def test_api_rejects_page_larger_than_limit(tmp_path):
             params={"limit": 101},
         )
         assert response.status_code == 422
+
+
+def test_search_finds_message_indexes_case_insensitively(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.get(
+            f"/api/sessions/codex_2/{SESSION_ID}/search",
+            params={"q": "mESSAGE 2"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "query": "mESSAGE 2",
+            "total": 1,
+            "message_indexes": [3],
+        }
