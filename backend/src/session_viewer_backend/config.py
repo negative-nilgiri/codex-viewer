@@ -6,8 +6,8 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Settings:
     database_path: Path
-    sessions_root: Path
-    titles_path: Path | None = None
+    sources_path: Path
+    session_metadata_path: Path
 
     @classmethod
     def from_environment(cls):
@@ -15,12 +15,13 @@ class Settings:
             database_path=Path(
                 os.environ.get("VIEWER_DATABASE", "/data/viewer.sqlite3")
             ),
-            sessions_root=Path(
-                os.environ.get("VIEWER_SESSIONS_ROOT", "/sessions")
+            sources_path=Path(
+                os.environ.get("VIEWER_SOURCES_FILE", "/config/sources.toml")
             ),
-            titles_path=(
-                Path(value)
-                if (value := os.environ.get("VIEWER_TITLES_FILE"))
-                else None
+            session_metadata_path=Path(
+                os.environ.get(
+                    "VIEWER_SESSION_METADATA_FILE",
+                    "/config/session_metadata.json",
+                )
             ),
         )

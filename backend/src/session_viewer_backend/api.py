@@ -7,6 +7,7 @@ from .database import initialize
 from .discovery import discover_sessions
 from .repository import get_messages, get_session, list_sessions, search_messages
 from .rollout import RolloutError
+from .sources import SourceConfigurationError, load_sources
 from .sync import sync_session
 
 
@@ -36,11 +37,11 @@ def create_app(settings: Settings | None = None):
         try:
             result = discover_sessions(
                 configured.database_path,
-                configured.sessions_root,
+                load_sources(configured.sources_path),
                 profile,
-                configured.titles_path,
+                configured.session_metadata_path,
             )
-        except (OSError, RolloutError, ValueError) as error:
+        except (OSError, RolloutError, SourceConfigurationError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return result.as_dict()
 
@@ -81,11 +82,12 @@ def create_app(settings: Settings | None = None):
         try:
             result = sync_session(
                 configured.database_path,
-                configured.sessions_root,
+                load_sources(configured.sources_path),
                 profile,
                 session_id,
+                configured.session_metadata_path,
             )
-        except (OSError, RolloutError, ValueError) as error:
+        except (OSError, RolloutError, SourceConfigurationError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return result.__dict__
 

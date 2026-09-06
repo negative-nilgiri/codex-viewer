@@ -4,26 +4,21 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .adapters import get_adapter
 from .database import connect, initialize
-from .rollout import (
-    PROFILE_RE,
-    RolloutError,
-    profile_directory,
-    session_id_from_path,
-    session_metadata,
-    visible_message,
-)
-from .sync import normalized_title
+from .formatting import normalized_title
+from .rollout import RolloutError, read_prefix_events
+from .sources import SourceDefinition, select_sources
 
 
 DISCOVERY_PREFIX_LIMIT = 256 * 1024
 
 
 @dataclass(frozen=True)
-class DiscoveredRollout:
-    profile: str
+class DiscoveredSession:
+    source_id: str
     session_id: str
-    rollout_path: Path
+    transcript_path: Path
     title: str
     workspace: str | None
     created_at: str | None
@@ -32,7 +27,7 @@ class DiscoveredRollout:
 
 @dataclass(frozen=True)
 class DiscoveryResult:
-    profiles: tuple[str, ...]
+    sources: tuple[str, ...]
     found: int
     added: int
     refreshed: int
@@ -40,84 +35,109 @@ class DiscoveryResult:
 
     def as_dict(self):
         result = asdict(self)
-        result["profiles"] = list(self.profiles)
+        result["sources"] = list(self.sources)
         return result
 
 
-def profile_names(sessions_root: Path, requested_profile: str | None):
-    if requested_profile is not None:
-        profile_directory(sessions_root, requested_profile)
-        return [requested_profile]
-    if not sessions_root.is_dir():
-        raise RolloutError(f"Sessions root does not exist: {sessions_root}")
-    return sorted(
-        path.name
-        for path in sessions_root.iterdir()
-        if path.is_dir() and PROFILE_RE.fullmatch(path.name)
+def load_session_metadata(path: Path):
+    try:
+        with path.open() as source:
+            parsed = json.load(source)
+    except OSError as error:
+        raise ValueError(f"Cannot read session metadata {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid session metadata {path}: {error}") from error
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{path} must contain an object keyed by session ID")
+
+    titles = {}
+    for session_id, metadata in parsed.items():
+        if not isinstance(session_id, str) or not isinstance(metadata, dict):
+            raise ValueError(
+                f"{path} must map every session ID to a metadata object"
+            )
+        title = metadata.get("title")
+        if title is not None and not isinstance(title, str):
+            raise ValueError(f"Session {session_id!r} has a non-string title")
+        if isinstance(title, str):
+            titles[session_id.lower()] = normalized_title(title, width=200)
+    return titles
+
+
+def inspect_transcript(source: SourceDefinition, path: Path):
+    adapter = get_adapter(source.adapter)
+    if not adapter.accepts_path(path):
+        return None
+    events = read_prefix_events(path, DISCOVERY_PREFIX_LIMIT)
+    if not events:
+        return None
+    inspected = adapter.inspect(path, events)
+    if inspected is None:
+        return None
+    stat = path.stat()
+    return DiscoveredSession(
+        source_id=source.id,
+        session_id=inspected.session_id,
+        transcript_path=path,
+        title=normalized_title(inspected.title),
+        workspace=inspected.workspace,
+        created_at=inspected.created_at,
+        approximate_activity_at=datetime.fromtimestamp(
+            stat.st_mtime, tz=timezone.utc
+        ).isoformat(),
     )
 
 
-def load_title_overrides(path: Path | None):
-    if path is None or not path.exists():
-        return {}
-    with path.open() as source:
-        parsed = json.load(source)
-    if not isinstance(parsed, dict) or not all(
-        isinstance(key, str) and isinstance(value, str)
-        for key, value in parsed.items()
-    ):
-        raise ValueError(
-            f"{path} must contain a JSON object mapping session IDs to titles"
+def scan_source(source: SourceDefinition):
+    if not source.path.is_dir():
+        raise RolloutError(f"Session source does not exist: {source.path}")
+    discovered: dict[str, DiscoveredSession] = {}
+    for path in sorted(source.path.rglob("*.jsonl")):
+        inspected = inspect_transcript(source, path)
+        if inspected is None:
+            continue
+        current = discovered.get(inspected.session_id)
+        if (
+            current is None
+            or current.transcript_path.stat().st_mtime_ns < path.stat().st_mtime_ns
+        ):
+            discovered[inspected.session_id] = inspected
+    return tuple(discovered.values())
+
+
+def find_transcript(source: SourceDefinition, requested_id: str):
+    requested = requested_id.lower()
+    matches = [
+        item for item in scan_source(source) if item.session_id.startswith(requested)
+    ]
+    matches.sort(key=lambda item: (item.session_id, str(item.transcript_path)))
+    if not matches:
+        raise RolloutError(
+            f"No session in {source.id} has an ID starting with {requested_id!r}"
         )
-    return {
-        session_id.lower(): normalized_title(title, width=200)
-        for session_id, title in parsed.items()
-    }
-
-
-def inspect_prefix(path: Path, expected_id: str):
-    title = f"Session {expected_id[:8]}"
-    workspace = None
-    created_at = None
-    consumed = 0
-    with path.open("rb") as source:
-        while consumed < DISCOVERY_PREFIX_LIMIT:
-            remaining = DISCOVERY_PREFIX_LIMIT - consumed
-            raw = source.readline(remaining + 1)
-            if not raw or len(raw) > remaining or not raw.endswith(b"\n"):
-                break
-            consumed += len(raw)
-            try:
-                event = json.loads(raw)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if not isinstance(event, dict):
-                continue
-            metadata = session_metadata(event)
-            if metadata is not None:
-                recorded_id = metadata.get("id") or metadata.get("session_id")
-                if recorded_id and str(recorded_id).lower() != expected_id:
-                    continue
-                created_at = str(metadata.get("timestamp") or created_at or "") or None
-                cwd = metadata.get("cwd")
-                if cwd:
-                    workspace = Path(str(cwd)).name
-            message = visible_message(event)
-            if message is not None and message[0] == "user":
-                title = normalized_title(message[1])
-                break
-    return title, workspace, created_at
+    if len(matches) > 1:
+        descriptions = ", ".join(
+            f"{item.session_id} ({item.transcript_path.name})" for item in matches[:8]
+        )
+        raise RolloutError(
+            f"Session prefix {requested_id!r} is ambiguous: {descriptions}"
+        )
+    return matches[0]
 
 
 def discover_sessions(
     database_path: Path,
-    sessions_root: Path,
-    requested_profile: str | None = None,
-    titles_path: Path | None = None,
+    sources: tuple[SourceDefinition, ...],
+    requested_source: str | None = None,
+    session_metadata_path: Path | None = None,
 ):
     initialize(database_path)
-    profiles = profile_names(sessions_root, requested_profile)
-    title_overrides = load_title_overrides(titles_path)
+    selected_sources = select_sources(sources, requested_source)
+    title_overrides = (
+        load_session_metadata(session_metadata_path)
+        if session_metadata_path is not None
+        else {}
+    )
     with closing(connect(database_path)) as connection:
         existing_rows = connection.execute(
             "SELECT profile, session_id, last_synced_at FROM sessions"
@@ -127,35 +147,10 @@ def discover_sessions(
         for row in existing_rows
     }
 
-    discovered: dict[tuple[str, str], DiscoveredRollout] = {}
-    for profile in profiles:
-        directory = profile_directory(sessions_root, profile)
-        for path in directory.rglob("*.jsonl"):
-            session_id = session_id_from_path(path)
-            if session_id is None:
-                continue
-            stat = path.stat()
-            key = (profile, session_id)
-            current = discovered.get(key)
-            if current is not None and current.rollout_path.stat().st_mtime_ns >= stat.st_mtime_ns:
-                continue
-            if existing.get(key) is None:
-                title, workspace, created_at = inspect_prefix(path, session_id)
-            else:
-                title = f"Session {session_id[:8]}"
-                workspace = None
-                created_at = None
-            discovered[key] = DiscoveredRollout(
-                profile=profile,
-                session_id=session_id,
-                rollout_path=path,
-                title=title,
-                workspace=workspace,
-                created_at=created_at,
-                approximate_activity_at=datetime.fromtimestamp(
-                    stat.st_mtime, tz=timezone.utc
-                ).isoformat(),
-            )
+    discovered: dict[tuple[str, str], DiscoveredSession] = {}
+    for source in selected_sources:
+        for item in scan_source(source):
+            discovered[(item.source_id, item.session_id)] = item
 
     discovered_at = datetime.now(timezone.utc).isoformat()
     added = 0
@@ -163,13 +158,42 @@ def discover_sessions(
     with closing(connect(database_path)) as connection:
         connection.execute("BEGIN IMMEDIATE")
         try:
-            for profile in profiles:
+            for source in selected_sources:
                 connection.execute(
                     "UPDATE sessions SET source_present = 0 WHERE profile = ?",
-                    (profile,),
+                    (source.id,),
                 )
+            # A transcript path may already belong to the wrong session after an
+            # older/broken discovery pass. Move that stale association aside before
+            # restoring every path to the identity found inside the transcript.
+            # The row (and any indexed messages attached to it) is deliberately
+            # preserved: its own transcript may be rediscovered later in this pass.
             for item in discovered.values():
-                key = (item.profile, item.session_id)
+                path_owner = connection.execute(
+                    """
+                    SELECT session_id FROM sessions
+                    WHERE profile = ? AND rollout_path = ?
+                    """,
+                    (item.source_id, str(item.transcript_path)),
+                ).fetchone()
+                if (
+                    path_owner is not None
+                    and path_owner["session_id"] != item.session_id
+                ):
+                    stale_path = (
+                        f"stale://{item.source_id}/"
+                        f"{path_owner['session_id']}/{discovered_at}"
+                    )
+                    connection.execute(
+                        """
+                        UPDATE sessions SET rollout_path = ?
+                        WHERE profile = ? AND session_id = ?
+                        """,
+                        (stale_path, item.source_id, path_owner["session_id"]),
+                    )
+            for item in discovered.values():
+                key = (item.source_id, item.session_id)
+                override = title_overrides.get(item.session_id)
                 if key in existing:
                     refreshed += 1
                     connection.execute(
@@ -185,14 +209,14 @@ def discover_sessions(
                         WHERE profile = ? AND session_id = ?
                         """,
                         (
-                            str(item.rollout_path),
+                            str(item.transcript_path),
                             discovered_at,
-                            title_overrides.get(item.session_id),
+                            override,
                             item.title,
                             item.workspace,
                             item.created_at,
                             item.approximate_activity_at,
-                            item.profile,
+                            item.source_id,
                             item.session_id,
                         ),
                     )
@@ -207,21 +231,21 @@ def discover_sessions(
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                         """,
                         (
-                            item.profile,
+                            item.source_id,
                             item.session_id,
-                            str(item.rollout_path),
+                            str(item.transcript_path),
                             item.title,
                             item.workspace,
                             item.created_at,
                             item.approximate_activity_at,
-                            title_overrides.get(item.session_id),
+                            override,
                             discovered_at,
                         ),
                     )
-            for profile in profiles:
+            for source in selected_sources:
                 rows = connection.execute(
                     "SELECT session_id FROM sessions WHERE profile = ?",
-                    (profile,),
+                    (source.id,),
                 ).fetchall()
                 for row in rows:
                     connection.execute(
@@ -229,15 +253,25 @@ def discover_sessions(
                         "WHERE profile = ? AND session_id = ?",
                         (
                             title_overrides.get(row["session_id"]),
-                            profile,
+                            source.id,
                             row["session_id"],
                         ),
                     )
-            placeholders = ",".join("?" for _ in profiles)
+                connection.execute(
+                    """
+                    DELETE FROM sessions
+                    WHERE profile = ? AND rollout_path LIKE 'stale://%'
+                      AND message_count = 0 AND last_synced_at IS NULL
+                      AND source_present = 0
+                    """,
+                    (source.id,),
+                )
+            source_ids = [source.id for source in selected_sources]
+            placeholders = ",".join("?" for _ in source_ids)
             unavailable = connection.execute(
                 f"SELECT COUNT(*) AS count FROM sessions "
                 f"WHERE profile IN ({placeholders}) AND source_present = 0",
-                profiles,
+                source_ids,
             ).fetchone()["count"]
             connection.commit()
         except Exception:
@@ -245,7 +279,7 @@ def discover_sessions(
             raise
 
     return DiscoveryResult(
-        profiles=tuple(profiles),
+        sources=tuple(source.id for source in selected_sources),
         found=len(discovered),
         added=added,
         refreshed=refreshed,

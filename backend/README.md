@@ -1,6 +1,6 @@
 # Viewer backend
 
-FastAPI and standard-library SQLite backend for the Codex Sessions Viewer.
+FastAPI and standard-library SQLite backend for the agent Sessions Viewer.
 
 ```bash
 uv sync
@@ -12,4 +12,5 @@ uv run uvicorn session_viewer_backend.api:app --reload
 Configuration:
 
 - `VIEWER_DATABASE`, default `/data/viewer.sqlite3`
-- `VIEWER_SESSIONS_ROOT`, default `/sessions`
+- `VIEWER_SOURCES_FILE`, default `/config/sources.toml`
+- `VIEWER_SESSION_METADATA_FILE`, default `/config/session_metadata.json`

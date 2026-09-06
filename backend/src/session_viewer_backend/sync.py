@@ -1,13 +1,14 @@
-import re
-import sqlite3
-import textwrap
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .adapters import get_adapter
 from .database import connect, initialize
-from .rollout import find_rollout, iter_complete_lines, session_metadata, visible_message
+from .discovery import find_transcript, load_session_metadata
+from .formatting import normalized_title
+from .rollout import RolloutError, iter_complete_lines
+from .sources import SourceDefinition, select_sources
 
 
 @dataclass(frozen=True)
@@ -19,12 +20,6 @@ class SyncResult:
     last_complete_offset: int
     up_to_date: bool
     rebuilt: bool
-
-
-def normalized_title(markdown: str, width=100):
-    value = " ".join(markdown.split())
-    value = re.sub(r"^#+\s*", "", value)
-    return textwrap.shorten(value, width=width, placeholder="…") or "Untitled session"
 
 
 def parsed_timestamp(value):
@@ -49,31 +44,83 @@ def later_timestamp(current, candidate):
     return current
 
 
-def sync_session(
+def earlier_timestamp(current, candidate):
+    current_parsed = parsed_timestamp(current)
+    candidate_parsed = parsed_timestamp(candidate)
+    if candidate_parsed is None:
+        return current
+    if current_parsed is None or candidate_parsed < current_parsed:
+        return candidate
+    return current
+
+
+def resolve_transcript(
     database_path: Path,
-    sessions_root: Path,
-    profile: str,
+    source: SourceDefinition,
     requested_id: str,
 ):
+    requested = requested_id.lower()
+    with closing(connect(database_path)) as connection:
+        rows = connection.execute(
+            "SELECT session_id, rollout_path FROM sessions WHERE profile = ?",
+            (source.id,),
+        ).fetchall()
+    matches = [row for row in rows if row["session_id"].startswith(requested)]
+    if len(matches) > 1:
+        descriptions = ", ".join(row["session_id"] for row in matches[:8])
+        raise RolloutError(
+            f"Session prefix {requested_id!r} is ambiguous: {descriptions}"
+        )
+    if len(matches) == 1:
+        path = Path(matches[0]["rollout_path"])
+        if path.is_file():
+            return matches[0]["session_id"], path
+
+    discovered = find_transcript(source, requested_id)
+    return discovered.session_id, discovered.transcript_path
+
+
+def sync_session(
+    database_path: Path,
+    sources: tuple[SourceDefinition, ...],
+    source_id: str,
+    requested_id: str,
+    session_metadata_path: Path | None = None,
+):
     initialize(database_path)
-    session_id, rollout_path = find_rollout(sessions_root, profile, requested_id)
-    initial_stat = rollout_path.stat()
+    source = select_sources(sources, source_id)[0]
+    adapter = get_adapter(source.adapter)
+    session_id, transcript_path = resolve_transcript(
+        database_path, source, requested_id
+    )
+    initial_stat = transcript_path.stat()
+    title_overrides = (
+        load_session_metadata(session_metadata_path)
+        if session_metadata_path is not None
+        else {}
+    )
 
     with closing(connect(database_path)) as connection:
         connection.execute("BEGIN IMMEDIATE")
         try:
             existing = connection.execute(
                 "SELECT * FROM sessions WHERE profile = ? AND session_id = ?",
-                (profile, session_id),
+                (source.id, session_id),
             ).fetchone()
             rebuilt = False
             if existing is None:
                 connection.execute(
                     """
-                    INSERT INTO sessions(profile, session_id, rollout_path)
-                    VALUES (?, ?, ?)
+                    INSERT INTO sessions(
+                        profile, session_id, rollout_path, title_override
+                    ) VALUES (?, ?, ?, ?)
                     """,
-                    (profile, session_id, str(rollout_path)),
+                    (
+                        source.id,
+                        session_id,
+                        str(transcript_path),
+                        title_overrides.get(session_id),
+                    ),
                 )
                 offset = 0
                 message_count = 0
@@ -83,7 +130,7 @@ def sync_session(
                 last_activity_at = None
             else:
                 replaced = (
-                    existing["rollout_path"] != str(rollout_path)
+                    existing["rollout_path"] != str(transcript_path)
                     or initial_stat.st_size < existing["last_complete_offset"]
                     or (
                         existing["source_inode"] is not None
@@ -96,7 +143,7 @@ def sync_session(
                 if replaced:
                     connection.execute(
                         "DELETE FROM messages WHERE profile = ? AND session_id = ?",
-                        (profile, session_id),
+                        (source.id, session_id),
                     )
                     offset = 0
                     message_count = 0
@@ -115,26 +162,30 @@ def sync_session(
 
             complete_offset = offset
             added_messages = 0
-            for parsed_line in iter_complete_lines(rollout_path, offset):
+            for parsed_line in iter_complete_lines(transcript_path, offset):
                 complete_offset = parsed_line.end
                 event = parsed_line.event
                 if event is None:
                     continue
                 last_activity_at = later_timestamp(
-                    last_activity_at, event.get("timestamp")
+                    last_activity_at, adapter.event_timestamp(event)
                 )
-                metadata = session_metadata(event)
-                if metadata is not None:
-                    recorded_id = metadata.get("id") or metadata.get("session_id")
-                    if recorded_id and str(recorded_id).lower() != session_id:
+                metadata = adapter.event_metadata(event)
+                if metadata.session_id and metadata.session_id != session_id:
+                    if adapter.name != "codex":
                         raise ValueError(
-                            f"Rollout metadata ID {recorded_id} does not match {session_id}"
+                            f"Transcript record ID {metadata.session_id} does not match "
+                            f"{session_id}"
                         )
-                    created_at = str(metadata.get("timestamp") or created_at or "") or None
-                    cwd = metadata.get("cwd")
-                    if cwd:
-                        workspace = Path(str(cwd)).name
-                message = visible_message(event)
+                else:
+                    if metadata.workspace:
+                        workspace = metadata.workspace
+                    if metadata.created_at:
+                        created_at = earlier_timestamp(created_at, metadata.created_at)
+                    if metadata.title:
+                        title = normalized_title(metadata.title)
+
+                message = adapter.visible_message(event)
                 if message is None:
                     continue
                 role, markdown, timestamp = message
@@ -150,7 +201,7 @@ def sync_session(
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        profile,
+                        source.id,
                         session_id,
                         message_count,
                         role,
@@ -160,7 +211,7 @@ def sync_session(
                     ),
                 )
 
-            final_stat = rollout_path.stat()
+            final_stat = transcript_path.stat()
             synced_at = datetime.now(timezone.utc).isoformat()
             connection.execute(
                 """
@@ -169,11 +220,11 @@ def sync_session(
                     last_activity_at = ?, last_complete_offset = ?, source_size = ?,
                     source_mtime_ns = ?, source_device = ?, source_inode = ?,
                     message_count = ?, last_synced_at = ?, sync_error = NULL,
-                    source_present = 1, last_discovered_at = ?
+                    title_override = ?, source_present = 1, last_discovered_at = ?
                 WHERE profile = ? AND session_id = ?
                 """,
                 (
-                    str(rollout_path),
+                    str(transcript_path),
                     title,
                     workspace,
                     created_at,
@@ -185,8 +236,9 @@ def sync_session(
                     final_stat.st_ino,
                     message_count,
                     synced_at,
+                    title_overrides.get(session_id),
                     synced_at,
-                    profile,
+                    source.id,
                     session_id,
                 ),
             )
@@ -196,7 +248,7 @@ def sync_session(
             raise
 
     return SyncResult(
-        profile=profile,
+        profile=source.id,
         session_id=session_id,
         added_messages=added_messages,
         message_count=message_count,

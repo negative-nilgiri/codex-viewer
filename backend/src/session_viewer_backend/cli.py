@@ -5,22 +5,23 @@ import json
 from .config import Settings
 from .discovery import discover_sessions
 from .rollout import RolloutError
+from .sources import SourceConfigurationError, load_sources
 from .sync import sync_session
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Index Codex session rollouts")
+    parser = argparse.ArgumentParser(description="Index local agent session transcripts")
     commands = parser.add_subparsers(dest="command", required=True)
     sync_parser = commands.add_parser("sync", help="Incrementally index one session")
-    sync_parser.add_argument("profile", help="Mounted Codex profile, for example codex_2")
+    sync_parser.add_argument("source", help="Configured source, for example codex_2 or claude")
     sync_parser.add_argument("session_id", help="Full session UUID or unique prefix")
     discover_parser = commands.add_parser(
-        "discover", help="Catalog mounted rollouts without indexing their messages"
+        "discover", help="Catalog mounted transcripts without indexing their messages"
     )
     discover_parser.add_argument(
-        "profile",
+        "source",
         nargs="?",
-        help="Optional mounted Codex profile; omit to scan every profile",
+        help="Optional configured source; omit to scan every source",
     )
     return parser.parse_args(argv)
 
@@ -28,14 +29,18 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     settings = Settings.from_environment()
+    try:
+        sources = load_sources(settings.sources_path)
+    except SourceConfigurationError as error:
+        raise SystemExit(str(error)) from error
     if args.command == "sync":
         try:
             result = sync_session(
                 settings.database_path,
-                settings.sessions_root,
-                args.profile,
-                settings.titles_path,
+                sources,
+                args.source,
                 args.session_id,
+                settings.session_metadata_path,
             )
         except (OSError, RolloutError, ValueError) as error:
             raise SystemExit(str(error)) from error
@@ -44,8 +49,9 @@ def main(argv=None):
         try:
             result = discover_sessions(
                 settings.database_path,
-                settings.sessions_root,
-                args.profile,
+                sources,
+                args.source,
+                settings.session_metadata_path,
             )
         except (OSError, RolloutError, ValueError) as error:
             raise SystemExit(str(error)) from error

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from session_viewer_backend.api import create_app
 from session_viewer_backend.config import Settings
+from session_viewer_backend.sources import load_sources
 from session_viewer_backend.sync import sync_session
 
 
@@ -23,15 +24,38 @@ def make_client(tmp_path, message_count=4):
     rollout.parent.mkdir(parents=True)
     events = [
         {
-            "timestamp": f"2026-08-30T08:00:{index:02d}Z",
-            "type": "event_msg",
-            "payload": {"type": "user_message", "message": f"Message {index}"},
-        }
-        for index in range(message_count)
+            "timestamp": "2026-08-30T07:59:59Z",
+            "type": "session_meta",
+            "payload": {"id": SESSION_ID, "cwd": "/workspace/api-test"},
+        },
+        *[
+            {
+                "timestamp": f"2026-08-30T08:00:{index:02d}Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": f"Message {index}",
+                },
+            }
+            for index in range(message_count)
+        ],
     ]
     rollout.write_text("".join(json.dumps(item) + "\n" for item in events))
-    settings = Settings(tmp_path / "viewer.sqlite3", sessions_root)
-    sync_session(settings.database_path, settings.sessions_root, "codex_2", SESSION_ID)
+    sources_path = tmp_path / "sources.toml"
+    sources_path.write_text(
+        '[[sources]]\nid = "codex_2"\nadapter = "codex"\n'
+        f"path = {json.dumps(str(sessions_root / 'codex_2'))}\n"
+    )
+    metadata_path = tmp_path / "session_metadata.json"
+    metadata_path.write_text("{}")
+    settings = Settings(tmp_path / "viewer.sqlite3", sources_path, metadata_path)
+    sync_session(
+        settings.database_path,
+        load_sources(settings.sources_path),
+        "codex_2",
+        SESSION_ID,
+        metadata_path,
+    )
     return TestClient(create_app(settings))
 
 

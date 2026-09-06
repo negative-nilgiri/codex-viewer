@@ -20,9 +20,10 @@ RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH" \
     VIEWER_DATABASE=/data/viewer.sqlite3 \
-    VIEWER_SESSIONS_ROOT=/sessions
+    VIEWER_SOURCES_FILE=/config/sources.toml \
+    VIEWER_SESSION_METADATA_FILE=/config/session_metadata.json
 
-RUN mkdir -p /data /sessions
+RUN mkdir -p /config /data /sources
 
 EXPOSE 8000
 

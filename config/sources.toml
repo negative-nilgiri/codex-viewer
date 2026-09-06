@@ -1,0 +1,14 @@
+[[sources]]
+id = "codex_1"
+adapter = "codex"
+path = "/sources/codex_1/sessions"
+
+[[sources]]
+id = "codex_2"
+adapter = "codex"
+path = "/sources/codex_2/sessions"
+
+[[sources]]
+id = "claude"
+adapter = "claude"
+path = "/sources/projects"

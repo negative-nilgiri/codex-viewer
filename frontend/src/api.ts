@@ -38,7 +38,7 @@ export type SyncResult = {
 }
 
 export type DiscoveryResult = {
-  profiles: string[]
+  sources: string[]
   found: number
   added: number
   refreshed: number

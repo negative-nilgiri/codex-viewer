@@ -366,20 +366,27 @@ function Transcript({
     try {
       const previousTotal = total
       const result = await syncSession(session)
-      if (result.added_messages) {
+      const observedNewMessages = Math.max(0, result.message_count - previousTotal)
+      const messageCountChanged = result.message_count !== previousTotal
+      if (observedNewMessages) {
         invalidateFrom(blockStartFor(previousTotal))
         if (automatic && atLiveTail.current) {
           followAfterSync.current = true
         } else {
-          setNewMessages((current) => current + result.added_messages)
+          setNewMessages((current) => current + observedNewMessages)
         }
+      } else if (messageCountChanged || result.rebuilt) {
+        invalidateFrom(0)
       }
       setTotal(result.message_count)
-      if (result.added_messages || !automatic) await onSynced()
+      if (messageCountChanged || result.added_messages || result.rebuilt || !automatic) {
+        await onSynced()
+      }
       if (!automatic) {
+        const availableMessages = observedNewMessages || result.added_messages
         setNotice(
-          result.added_messages
-            ? `Imported ${result.added_messages} new message${result.added_messages === 1 ? '' : 's'}.`
+          availableMessages
+            ? `${availableMessages} new message${availableMessages === 1 ? '' : 's'} available.`
             : 'Session is already up to date.',
         )
       }
@@ -632,7 +639,7 @@ function Transcript({
         ) : (
           <div className="empty-transcript">
             <h2>No visible messages</h2>
-            <p>This rollout has not produced a user or assistant message yet.</p>
+            <p>This transcript has not produced a user or assistant message yet.</p>
           </div>
         )}
       </div>
@@ -761,7 +768,7 @@ function App() {
               <div className="empty-sidebar">Scanning mounted sessions…</div>
             ) : sessions.length === 0 ? (
               <div className="empty-sidebar">
-                <p>No session rollouts were discovered.</p>
+                <p>No session transcripts were discovered.</p>
                 <code>viewer discover</code>
               </div>
             ) : (
