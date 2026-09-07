@@ -1,3 +1,4 @@
+import os
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -54,6 +55,18 @@ def earlier_timestamp(current, candidate):
     return current
 
 
+def refresh_bind_mount_metadata(path: Path):
+    """Refresh Docker Desktop's view of an append-only bind-mounted file."""
+    # With VirtioFS, stat/open on a known path can keep returning stale metadata.
+    # Reading that file's directory entry refreshes it without recursively walking
+    # the entire configured source, as the pre-adapter implementation used to do.
+    with os.scandir(path.parent) as entries:
+        for entry in entries:
+            if entry.name == path.name:
+                entry.stat()
+                return
+
+
 def resolve_transcript(
     database_path: Path,
     source: SourceDefinition,
@@ -93,6 +106,7 @@ def sync_session(
     session_id, transcript_path = resolve_transcript(
         database_path, source, requested_id
     )
+    refresh_bind_mount_metadata(transcript_path)
     initial_stat = transcript_path.stat()
     title_overrides = (
         load_session_metadata(session_metadata_path)

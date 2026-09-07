@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from session_viewer_backend import sync as sync_module
 from session_viewer_backend.repository import get_messages, list_sessions
 from session_viewer_backend.rollout import RolloutError
 from session_viewer_backend.sources import SourceDefinition
@@ -100,6 +101,23 @@ def test_append_imports_only_new_complete_lines(archive):
     assert completed.added_messages == 1
     assert completed.message_count == 3
     assert completed.last_complete_offset == rollout.stat().st_size
+
+
+def test_incremental_sync_refreshes_the_transcript_directory(archive, monkeypatch):
+    database, sources, rollout = archive
+    sync_session(database, sources, "codex_2", SESSION_ID)
+    scanned = []
+    scandir = sync_module.os.scandir
+
+    def tracked_scandir(path):
+        scanned.append(Path(path))
+        return scandir(path)
+
+    monkeypatch.setattr(sync_module.os, "scandir", tracked_scandir)
+
+    sync_session(database, sources, "codex_2", SESSION_ID)
+
+    assert scanned == [rollout.parent]
 
 
 def test_truncated_rollout_is_rebuilt(archive):
