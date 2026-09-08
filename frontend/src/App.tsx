@@ -178,6 +178,7 @@ function Transcript({
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [goToValue, setGoToValue] = useState('')
+  const [directJumpTarget, setDirectJumpTarget] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(session))
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
@@ -469,6 +470,16 @@ function Transcript({
     return () => window.cancelAnimationFrame(frame)
   }, [loadBlock, total])
 
+  useEffect(() => {
+    if (directJumpTarget === null) return
+    if (!blocks.has(blockStartFor(directJumpTarget))) return
+    const frame = window.requestAnimationFrame(() => {
+      virtuoso.current?.scrollToIndex({ index: directJumpTarget, align: 'start' })
+      setDirectJumpTarget(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [blocks, directJumpTarget])
+
   function jumpTo(index: number) {
     if (!total) return
     loadBlock(blockStartFor(index))
@@ -478,9 +489,8 @@ function Transcript({
   function jumpToMessage(messageIndex: number) {
     if (messageIndex < 1 || messageIndex > total) return
     const index = messageIndex - 1
-    setSearchTarget(messageIndex)
+    setDirectJumpTarget(index)
     loadBlock(blockStartFor(index))
-    virtuoso.current?.scrollToIndex({ index, align: 'center' })
   }
 
   function submitGoToMessage(event: FormEvent<HTMLFormElement>) {
