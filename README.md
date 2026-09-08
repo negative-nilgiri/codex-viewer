@@ -202,6 +202,13 @@ that are not currently mounted by the virtual list. The fold state is stored in
 the browser for each source and session; it does not modify SQLite or the
 transcript. Collapsed messages skip Markdown and Mermaid rendering entirely.
 
+Enter a message number in the compact **# / Go** control to jump directly to
+that message without loading the intervening transcript. The star in each
+message header adds or removes a bookmark. The **Bookmarks** menu jumps to saved
+messages and lets you edit their automatically generated labels. Bookmarks and
+their labels are stored in browser local storage per source and session; they do
+not modify SQLite or the transcript.
+
 The session header also provides a copy button for the complete session ID.
 
 ## Tests

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   discoverSessions,
@@ -21,6 +21,11 @@ type BlockStatus = 'loading' | 'error'
 type FoldState = {
   defaultCollapsed: boolean
   exceptions: Set<number>
+}
+
+type Bookmark = {
+  messageIndex: number
+  title: string
 }
 
 function displayClockTime(value: string | null) {
@@ -80,6 +85,43 @@ function watchStorageKey(session: SessionSummary) {
   return `codex-sessions-viewer:watch:${sessionIdentity(session)}`
 }
 
+function bookmarkStorageKey(session: SessionSummary) {
+  return `codex-sessions-viewer:bookmarks:${sessionIdentity(session)}`
+}
+
+function loadBookmarks(session: SessionSummary): Bookmark[] {
+  try {
+    const stored = localStorage.getItem(bookmarkStorageKey(session))
+    if (!stored) return []
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(
+        (item): item is Bookmark =>
+          typeof item === 'object' &&
+          item !== null &&
+          Number.isInteger((item as Bookmark).messageIndex) &&
+          (item as Bookmark).messageIndex > 0 &&
+          typeof (item as Bookmark).title === 'string',
+      )
+      .sort((left, right) => left.messageIndex - right.messageIndex)
+  } catch (error) {
+    console.warn('Could not restore message bookmarks', error)
+    return []
+  }
+}
+
+function defaultBookmarkTitle(message: Message) {
+  const excerpt = message.markdown
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/^#{1,6}\s+/, '')
+    .replace(/\s+/g, ' ')
+  if (!excerpt) return `Message ${message.message_index}`
+  return excerpt.length > 72 ? `${excerpt.slice(0, 71)}…` : excerpt
+}
+
 function loadFoldState(session: SessionSummary): FoldState {
   try {
     const stored = localStorage.getItem(foldStorageKey(session))
@@ -135,6 +177,8 @@ function Transcript({
   const [searchTarget, setSearchTarget] = useState<number | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [goToValue, setGoToValue] = useState('')
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(session))
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
     () => localStorage.getItem(watchStorageKey(session)) === 'true',
@@ -173,6 +217,14 @@ function Transcript({
   useEffect(() => {
     localStorage.setItem(watchStorageKey(session), String(watching))
   }, [session, watching])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(bookmarkStorageKey(session), JSON.stringify(bookmarks))
+    } catch (error) {
+      console.warn('Could not persist message bookmarks', error)
+    }
+  }, [bookmarks, session])
 
   useEffect(() => {
     function handleFindShortcut(event: KeyboardEvent) {
@@ -423,6 +475,56 @@ function Transcript({
     virtuoso.current?.scrollToIndex({ index, align: index === 0 ? 'start' : 'end' })
   }
 
+  function jumpToMessage(messageIndex: number) {
+    if (messageIndex < 1 || messageIndex > total) return
+    const index = messageIndex - 1
+    setSearchTarget(messageIndex)
+    loadBlock(blockStartFor(index))
+    virtuoso.current?.scrollToIndex({ index, align: 'center' })
+  }
+
+  function submitGoToMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const messageIndex = Number(goToValue)
+    if (!Number.isInteger(messageIndex)) return
+    jumpToMessage(messageIndex)
+    setGoToValue('')
+  }
+
+  const toggleBookmark = useCallback((message: Message) => {
+    setBookmarks((current) => {
+      const existing = current.some(
+        (bookmark) => bookmark.messageIndex === message.message_index,
+      )
+      if (existing) {
+        return current.filter(
+          (bookmark) => bookmark.messageIndex !== message.message_index,
+        )
+      }
+      return [
+        ...current,
+        {
+          messageIndex: message.message_index,
+          title: defaultBookmarkTitle(message),
+        },
+      ].sort((left, right) => left.messageIndex - right.messageIndex)
+    })
+  }, [])
+
+  function updateBookmarkTitle(messageIndex: number, title: string) {
+    setBookmarks((current) =>
+      current.map((bookmark) =>
+        bookmark.messageIndex === messageIndex ? { ...bookmark, title } : bookmark,
+      ),
+    )
+  }
+
+  function removeBookmark(messageIndex: number) {
+    setBookmarks((current) =>
+      current.filter((bookmark) => bookmark.messageIndex !== messageIndex),
+    )
+  }
+
   function jumpToLatest() {
     setNewMessages(0)
     jumpTo(total - 1)
@@ -544,6 +646,63 @@ function Transcript({
                 </span>
               )}
             </span>
+            <form className="go-to-message" onSubmit={submitGoToMessage}>
+              <input
+                aria-label="Message number"
+                inputMode="numeric"
+                max={total || undefined}
+                min="1"
+                onChange={(event) => setGoToValue(event.target.value)}
+                placeholder="#"
+                required
+                type="number"
+                value={goToValue}
+              />
+              <button type="submit">Go</button>
+            </form>
+            <details className="bookmarks-menu">
+              <summary>
+                Bookmarks{bookmarks.length ? ` (${bookmarks.length})` : ''}
+              </summary>
+              <div className="bookmarks-popover">
+                {bookmarks.length ? (
+                  bookmarks.map((bookmark) => (
+                    <div className="bookmark-row" key={bookmark.messageIndex}>
+                      <button
+                        className="bookmark-index"
+                        onClick={() => jumpToMessage(bookmark.messageIndex)}
+                        title={`Go to message ${bookmark.messageIndex}`}
+                        type="button"
+                      >
+                        #{bookmark.messageIndex}
+                      </button>
+                      <input
+                        aria-label={`Title for bookmark ${bookmark.messageIndex}`}
+                        onChange={(event) =>
+                          updateBookmarkTitle(bookmark.messageIndex, event.target.value)
+                        }
+                        placeholder={`Message ${bookmark.messageIndex}`}
+                        type="text"
+                        value={bookmark.title}
+                      />
+                      <button
+                        aria-label={`Remove bookmark ${bookmark.messageIndex}`}
+                        className="bookmark-remove"
+                        onClick={() => removeBookmark(bookmark.messageIndex)}
+                        title="Remove bookmark"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="bookmarks-empty">
+                    Bookmark a message with the star in its header.
+                  </p>
+                )}
+              </div>
+            </details>
             <button
               onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
               type="button"
@@ -618,8 +777,12 @@ function Transcript({
               return (
                 <div className={`message-slot${searchTarget === message.message_index ? ' message-slot--search-target' : ''}`}>
                   <MessageCard
+                    bookmarked={bookmarks.some(
+                      (bookmark) => bookmark.messageIndex === message.message_index,
+                    )}
                     collapsed={collapsed}
                     message={message}
+                    onBookmark={toggleBookmark}
                     onToggle={toggleMessage}
                   />
                 </div>

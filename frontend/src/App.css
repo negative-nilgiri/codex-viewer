@@ -241,6 +241,102 @@
   white-space: nowrap;
 }
 
+.go-to-message {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.go-to-message input {
+  box-sizing: border-box;
+  width: 4.6rem;
+  padding: 0.34rem 0.42rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.35rem;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.76rem;
+}
+
+.bookmarks-menu {
+  position: relative;
+}
+
+.bookmarks-menu > summary {
+  padding: 0.34rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.35rem;
+  color: var(--heading);
+  background: var(--surface);
+  font-size: 0.76rem;
+  font-weight: 580;
+  cursor: pointer;
+  list-style: none;
+}
+
+.bookmarks-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bookmarks-menu > summary:hover {
+  border-color: var(--accent);
+}
+
+.bookmarks-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  width: min(30rem, 80vw);
+  max-height: min(24rem, 60vh);
+  padding: 0.5rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.45rem;
+  background: var(--surface);
+  box-shadow: 0 0.7rem 1.8rem rgb(0 0 0 / 18%);
+}
+
+.bookmark-row {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.bookmark-row + .bookmark-row {
+  margin-top: 0.35rem;
+}
+
+.bookmark-row input {
+  min-width: 0;
+  padding: 0.34rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  color: var(--text);
+  background: var(--background);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.bookmark-index {
+  min-width: 3.6rem;
+  color: var(--accent);
+}
+
+.bookmark-remove {
+  width: 1.8rem;
+  padding-inline: 0;
+}
+
+.bookmarks-empty {
+  margin: 0;
+  padding: 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .watch-toggle {
   display: inline-flex;
   align-items: center;
@@ -492,11 +588,22 @@ button:disabled {
 }
 
 .copy-button--message,
+.bookmark-button,
 .fold-button {
   border-color: currentColor;
   color: inherit;
   background: transparent;
   opacity: 0.82;
+}
+
+.bookmark-button {
+  width: 1.8rem;
+  padding-inline: 0;
+  font-size: 0.9rem;
+}
+
+.bookmark-button--active {
+  opacity: 1;
 }
 
 .copy-button--session {

@@ -75,12 +75,16 @@ function displayTime(value: string | null) {
 }
 
 export const MessageCard = memo(function MessageCard({
+  bookmarked,
   collapsed,
   message,
+  onBookmark,
   onToggle,
 }: {
+  bookmarked: boolean
   collapsed: boolean
   message: Message
+  onBookmark: (message: Message) => void
   onToggle: (messageIndex: number) => void
 }) {
   return (
@@ -91,6 +95,16 @@ export const MessageCard = memo(function MessageCard({
         </strong>
         <div className="message-controls">
           <time>{displayTime(message.timestamp)}</time>
+          <button
+            aria-label={`${bookmarked ? 'Remove bookmark from' : 'Bookmark'} message ${message.message_index}`}
+            aria-pressed={bookmarked}
+            className={`bookmark-button${bookmarked ? ' bookmark-button--active' : ''}`}
+            onClick={() => onBookmark(message)}
+            title={bookmarked ? 'Remove bookmark' : 'Bookmark message'}
+            type="button"
+          >
+            {bookmarked ? '★' : '☆'}
+          </button>
           <CopyButton
             className="copy-button--message"
             label="Copy message as Markdown"
