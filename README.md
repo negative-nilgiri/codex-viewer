@@ -187,6 +187,8 @@ storage.
 - **Bookmarks** opens the saved-message list. Bookmark labels are generated
   from message text and can be edited in place.
 - **Fold**, **Collapse all**, and **Expand all** control long message bodies.
+- Messages with at least two headings have an **Outline** button. The outline is
+  closed by default and provides quick jumps within that message.
 - The session ID, complete message Markdown, and every fenced code block have
   dedicated copy buttons.
 
@@ -204,6 +206,27 @@ User and assistant messages share the same GitHub-flavored Markdown pipeline.
 The viewer supports headings, lists, tables, task lists, blockquotes, links,
 inline code, fenced code, and raw HTML. Recognized fenced-code languages receive
 syntax highlighting.
+
+Headings receive message-scoped anchors, with a small `#` link visible only on
+hover. Ordinary same-document Markdown links are resolved inside their own
+message, so Codex can produce a compact table of contents without conflicting
+with identically named headings elsewhere in the conversation:
+
+```markdown
+- [Architecture](#architecture)
+- [Trade-offs](#trade-offs)
+
+## Architecture
+...
+
+## Trade-offs
+...
+```
+
+For long answers, ask Codex to start with a short Markdown table of contents
+using this standard link format. These anchors navigate the currently rendered
+message; durable links that reopen a session at a specific heading are not yet
+part of the URL scheme.
 
 A fenced block tagged `mermaid` is rendered as a Mermaid diagram:
 
