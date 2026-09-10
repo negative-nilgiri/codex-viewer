@@ -51,6 +51,20 @@ export type SearchResult = {
   message_indexes: number[]
 }
 
+export type BookmarkBackupItem = {
+  message_index: number
+  title: string
+}
+
+export type BookmarkBackup = {
+  schema_version: 1
+  profile: string
+  session_id: string
+  session_title: string
+  exported_at: string
+  bookmarks: BookmarkBackupItem[]
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
@@ -100,4 +114,21 @@ export function searchMessages(
 ): Promise<SearchResult> {
   const parameters = new URLSearchParams({ q: query })
   return request<SearchResult>(`${sessionPath(session)}/search?${parameters}`, { signal })
+}
+
+export function exportBookmarkBackup(
+  session: SessionSummary,
+  bookmarks: BookmarkBackupItem[],
+): Promise<BookmarkBackup> {
+  return request<BookmarkBackup>(`${sessionPath(session)}/bookmarks`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookmarks }),
+  })
+}
+
+export function restoreBookmarkBackup(
+  session: SessionSummary,
+): Promise<BookmarkBackup> {
+  return request<BookmarkBackup>(`${sessionPath(session)}/bookmarks`)
 }

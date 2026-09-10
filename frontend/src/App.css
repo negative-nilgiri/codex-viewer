@@ -341,6 +341,21 @@
   font-size: 0.75rem;
 }
 
+.bookmark-backup-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.bookmark-backup-actions button {
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.7rem;
+}
+
 .watch-toggle {
   display: inline-flex;
   align-items: center;

@@ -10,6 +10,7 @@ services:
       VIEWER_DATABASE: /data/viewer.sqlite3
       VIEWER_SOURCES_FILE: /config/sources.toml
       VIEWER_SESSION_METADATA_FILE: /config/session_metadata.json
+      VIEWER_BOOKMARKS_DIRECTORY: /bookmarks
     volumes:
       - type: bind
         source: ${VIEWER_SOURCES_ROOT:-..}
@@ -22,6 +23,9 @@ services:
       - type: volume
         source: viewer-data
         target: /data
+      - type: bind
+        source: ./bookmarks
+        target: /bookmarks
     restart: unless-stopped
 
   web:

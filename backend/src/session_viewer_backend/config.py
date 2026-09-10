@@ -8,6 +8,7 @@ class Settings:
     database_path: Path
     sources_path: Path
     session_metadata_path: Path
+    bookmarks_path: Path = Path("/data/bookmarks")
 
     @classmethod
     def from_environment(cls):
@@ -23,5 +24,8 @@ class Settings:
                     "VIEWER_SESSION_METADATA_FILE",
                     "/config/session_metadata.json",
                 )
+            ),
+            bookmarks_path=Path(
+                os.environ.get("VIEWER_BOOKMARKS_DIRECTORY", "/data/bookmarks")
             ),
         )

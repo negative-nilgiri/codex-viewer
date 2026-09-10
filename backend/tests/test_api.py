@@ -48,7 +48,12 @@ def make_client(tmp_path, message_count=4):
     )
     metadata_path = tmp_path / "session_metadata.json"
     metadata_path.write_text("{}")
-    settings = Settings(tmp_path / "viewer.sqlite3", sources_path, metadata_path)
+    settings = Settings(
+        tmp_path / "viewer.sqlite3",
+        sources_path,
+        metadata_path,
+        tmp_path / "bookmarks",
+    )
     sync_session(
         settings.database_path,
         load_sources(settings.sources_path),
@@ -99,3 +104,33 @@ def test_search_finds_message_indexes_case_insensitively(tmp_path):
             "total": 1,
             "message_indexes": [3],
         }
+
+
+def test_bookmark_backup_export_overwrites_and_restore_reads_snapshot(tmp_path):
+    with make_client(tmp_path) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/bookmarks"
+        first = client.put(
+            path,
+            json={
+                "bookmarks": [
+                    {"message_index": 4, "title": "Fourth"},
+                    {"message_index": 2, "title": "Second"},
+                ]
+            },
+        )
+        assert first.status_code == 200
+        assert [item["message_index"] for item in first.json()["bookmarks"]] == [2, 4]
+
+        replacement = client.put(
+            path,
+            json={"bookmarks": [{"message_index": 3, "title": "Only bookmark"}]},
+        )
+        assert replacement.status_code == 200
+
+        restored = client.get(path)
+        assert restored.status_code == 200
+        assert restored.json()["bookmarks"] == [
+            {"message_index": 3, "title": "Only bookmark"}
+        ]
+        backup = json.loads((tmp_path / "bookmarks" / f"{SESSION_ID}.json").read_text())
+        assert backup["bookmarks"] == restored.json()["bookmarks"]

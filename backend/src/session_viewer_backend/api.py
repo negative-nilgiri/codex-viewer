@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field, ValidationError
 
+from .bookmarks import BookmarkBackupError, load_backup, save_backup
 from .config import Settings
 from .database import initialize
 from .discovery import discover_sessions
@@ -9,6 +12,23 @@ from .repository import get_messages, get_session, list_sessions, search_message
 from .rollout import RolloutError
 from .sources import SourceConfigurationError, load_sources
 from .sync import sync_session
+
+
+class BookmarkItem(BaseModel):
+    message_index: int = Field(ge=1)
+    title: str = Field(max_length=500)
+
+
+class BookmarkBackupInput(BaseModel):
+    bookmarks: list[BookmarkItem] = Field(max_length=10_000)
+
+
+class BookmarkBackup(BookmarkBackupInput):
+    schema_version: Literal[1]
+    profile: str
+    session_id: str
+    session_title: str
+    exported_at: str
 
 
 def create_app(settings: Settings | None = None):
@@ -76,6 +96,52 @@ def create_app(settings: Settings | None = None):
         if result is None:
             raise HTTPException(status_code=404, detail="Session is not indexed")
         return result
+
+    @application.put(
+        "/api/sessions/{profile}/{session_id}/bookmarks",
+        response_model=BookmarkBackup,
+    )
+    def export_bookmarks(
+        profile: str,
+        session_id: str,
+        payload: BookmarkBackupInput,
+    ):
+        indexed_session = get_session(configured.database_path, profile, session_id)
+        if indexed_session is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        try:
+            return save_backup(
+                configured.bookmarks_path,
+                profile,
+                session_id,
+                indexed_session["title"],
+                [bookmark.model_dump() for bookmark in payload.bookmarks],
+            )
+        except (BookmarkBackupError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @application.get(
+        "/api/sessions/{profile}/{session_id}/bookmarks",
+        response_model=BookmarkBackup,
+    )
+    def restore_bookmarks(profile: str, session_id: str):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        try:
+            snapshot = load_backup(configured.bookmarks_path, profile, session_id)
+            if snapshot is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No bookmark backup exists for this session",
+                )
+            return BookmarkBackup.model_validate(snapshot)
+        except BookmarkBackupError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=400,
+                detail="Bookmark backup contains invalid data",
+            ) from error
 
     @application.post("/api/sessions/{profile}/{session_id}/sync")
     def sync(profile: str, session_id: str):

@@ -174,9 +174,9 @@ The underlying format is intentionally simple:
 }
 ```
 
-Session titles are deployment configuration. Message bookmarks and bookmark
-labels are different: they are stored only in the current browser's local
-storage.
+Session titles are deployment configuration. Live message bookmarks and their
+labels are stored in the current browser's local storage. They can also be
+exported as durable snapshots from the viewer.
 
 ## Reading controls
 
@@ -186,6 +186,9 @@ storage.
 - The star in a message header adds or removes a bookmark.
 - **Bookmarks** opens the saved-message list. Bookmark labels are generated
   from message text and can be edited in place.
+- **Export backup** atomically overwrites `bookmarks/<session-id>.json` with the
+  current list. **Restore backup** confirms and then replaces the browser list
+  directly; it does not scan or synchronize the transcript.
 - **Fold**, **Collapse all**, and **Expand all** control long message bodies.
 - Messages with at least two headings have an **Outline** button. The outline is
   closed by default and provides quick jumps within that message.
@@ -198,9 +201,10 @@ Press **Ctrl+F** or **Cmd+F** to search the complete indexed conversation—not
 just the messages currently rendered on screen. Enter and Shift+Enter move
 between matches, and Escape closes search.
 
-Fold state, bookmarks, bookmark labels, sidebar state, and Watch preferences
-are stored in browser local storage. They do not modify SQLite or transcript
-files.
+Fold state, live bookmarks, bookmark labels, sidebar state, and Watch
+preferences are stored in browser local storage. Bookmark backups are readable,
+versioned JSON files in the gitignored `bookmarks/` directory. Neither mechanism
+modifies SQLite or transcript files.
 
 ## Markdown rendering
 

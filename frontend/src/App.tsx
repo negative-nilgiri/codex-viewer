@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   discoverSessions,
+  exportBookmarkBackup,
   fetchMessages,
   fetchSessions,
+  restoreBookmarkBackup,
   searchMessages,
   syncSession,
   type Message,
@@ -180,6 +182,7 @@ function Transcript({
   const [goToValue, setGoToValue] = useState('')
   const [directJumpTarget, setDirectJumpTarget] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(session))
+  const [bookmarkOperation, setBookmarkOperation] = useState<'export' | 'restore' | null>(null)
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
     () => localStorage.getItem(watchStorageKey(session)) === 'true',
@@ -535,6 +538,52 @@ function Transcript({
     )
   }
 
+  async function exportBookmarks() {
+    if (bookmarkOperation) return
+    setBookmarkOperation('export')
+    setError(null)
+    try {
+      const snapshot = await exportBookmarkBackup(
+        session,
+        bookmarks.map((bookmark) => ({
+          message_index: bookmark.messageIndex,
+          title: bookmark.title,
+        })),
+      )
+      const count = snapshot.bookmarks.length
+      setNotice(`Exported ${count} bookmark${count === 1 ? '' : 's'}.`)
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBookmarkOperation(null)
+    }
+  }
+
+  async function restoreBookmarks() {
+    if (bookmarkOperation) return
+    setBookmarkOperation('restore')
+    setError(null)
+    try {
+      const snapshot = await restoreBookmarkBackup(session)
+      const count = snapshot.bookmarks.length
+      const confirmed = window.confirm(
+        `Replace ${bookmarks.length} local bookmark${bookmarks.length === 1 ? '' : 's'} with ${count} from the backup exported ${new Date(snapshot.exported_at).toLocaleString()}?`,
+      )
+      if (!confirmed) return
+      setBookmarks(
+        snapshot.bookmarks.map((bookmark) => ({
+          messageIndex: bookmark.message_index,
+          title: bookmark.title,
+        })),
+      )
+      setNotice(`Restored ${count} bookmark${count === 1 ? '' : 's'}.`)
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBookmarkOperation(null)
+    }
+  }
+
   function jumpToLatest() {
     setNewMessages(0)
     jumpTo(total - 1)
@@ -711,6 +760,22 @@ function Transcript({
                     Bookmark a message with the star in its header.
                   </p>
                 )}
+                <div className="bookmark-backup-actions">
+                  <button
+                    disabled={bookmarkOperation !== null}
+                    onClick={() => void exportBookmarks()}
+                    type="button"
+                  >
+                    {bookmarkOperation === 'export' ? 'Exporting…' : 'Export backup'}
+                  </button>
+                  <button
+                    disabled={bookmarkOperation !== null}
+                    onClick={() => void restoreBookmarks()}
+                    type="button"
+                  >
+                    {bookmarkOperation === 'restore' ? 'Restoring…' : 'Restore backup'}
+                  </button>
+                </div>
               </div>
             </details>
             <button
