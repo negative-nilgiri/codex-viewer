@@ -2,7 +2,9 @@ import {
   Children,
   isValidElement,
   memo,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
   type MouseEvent,
@@ -261,6 +263,9 @@ export const MessageCard = memo(function MessageCard({
   onToggle: (messageIndex: number) => void
 }) {
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const messageRef = useRef<HTMLElement>(null)
   const headings = useMemo(
     () => extractHeadings(message.markdown, message.message_index),
     [message.markdown, message.message_index],
@@ -270,8 +275,35 @@ export const MessageCard = memo(function MessageCard({
     [headings, message.message_index],
   )
 
+  useEffect(() => {
+    const content = contentRef.current
+    if (collapsed || !content) return
+
+    function measure() {
+      const viewportHeight =
+        content?.closest<HTMLElement>('.virtual-transcript')?.clientHeight ??
+        window.innerHeight
+      const contentHeight = content?.getBoundingClientRect().height ?? 0
+      setShowBackToTop(contentHeight > Math.max(viewportHeight * 1.4, 800))
+    }
+
+    const frame = requestAnimationFrame(measure)
+    const observer = new ResizeObserver(measure)
+    observer.observe(content)
+    window.addEventListener('resize', measure)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [collapsed])
+
   return (
-    <article className={`message message--${message.role}${collapsed ? ' message--collapsed' : ''}`}>
+    <article
+      className={`message message--${message.role}${collapsed ? ' message--collapsed' : ''}`}
+      ref={messageRef}
+    >
       <header>
         <strong>
           [{message.message_index}] {message.role === 'assistant' ? 'AGENT' : 'USER'}
@@ -317,43 +349,56 @@ export const MessageCard = memo(function MessageCard({
       </header>
       {!collapsed && (
         <div className="markdown-body">
-          {outlineOpen && headings.length >= 2 && (
-            <nav aria-label={`Message ${message.message_index} outline`} className="message-outline">
-              <strong>In this message</strong>
-              <ol>
-                {headings.map((heading) => (
-                  <li
-                    key={`${heading.line}-${heading.id}`}
-                    style={{
-                      paddingInlineStart: `${Math.max(heading.depth - 1, 0) * 0.8}rem`,
-                    }}
-                  >
-                    <a
-                      href={`#${heading.id}`}
-                      onClick={(event) => {
-                        event.preventDefault()
-                        setOutlineOpen(false)
-                        scrollToHeadingAfterLayout(heading.id)
+          <div className="message-markdown-content" ref={contentRef}>
+            {outlineOpen && headings.length >= 2 && (
+              <nav aria-label={`Message ${message.message_index} outline`} className="message-outline">
+                <strong>In this message</strong>
+                <ol>
+                  {headings.map((heading) => (
+                    <li
+                      key={`${heading.line}-${heading.id}`}
+                      style={{
+                        paddingInlineStart: `${Math.max(heading.depth - 1, 0) * 0.8}rem`,
                       }}
                     >
-                      {heading.text}
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            </nav>
+                      <a
+                        href={`#${heading.id}`}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setOutlineOpen(false)
+                          scrollToHeadingAfterLayout(heading.id)
+                        }}
+                      >
+                        {heading.text}
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            )}
+            <Markdown
+              components={markdownComponents}
+              rehypePlugins={[
+                rehypeRaw,
+                [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
+              ]}
+              remarkPlugins={[remarkGfm]}
+              urlTransform={(url) => url}
+            >
+              {message.markdown}
+            </Markdown>
+          </div>
+          {showBackToTop && (
+            <div className="message-back-to-top">
+              <button
+                onClick={() => messageRef.current?.scrollIntoView({ block: 'start' })}
+                title="Go to the top of this message"
+                type="button"
+              >
+                ↑ Top of message
+              </button>
+            </div>
           )}
-          <Markdown
-            components={markdownComponents}
-            rehypePlugins={[
-              rehypeRaw,
-              [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
-            ]}
-            remarkPlugins={[remarkGfm]}
-            urlTransform={(url) => url}
-          >
-            {message.markdown}
-          </Markdown>
         </div>
       )}
     </article>

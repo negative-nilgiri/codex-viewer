@@ -189,6 +189,8 @@ storage.
 - **Fold**, **Collapse all**, and **Expand all** control long message bodies.
 - Messages with at least two headings have an **Outline** button. The outline is
   closed by default and provides quick jumps within that message.
+- Rendered messages substantially taller than the viewport have a compact
+  **Top of message** action at their bottom.
 - The session ID, complete message Markdown, and every fenced code block have
   dedicated copy buttons.
 

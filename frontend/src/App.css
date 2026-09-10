@@ -462,12 +462,27 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.markdown-body > :first-child {
+.message-markdown-content > :first-child {
   margin-top: 0;
 }
 
-.markdown-body > :last-child {
+.message-markdown-content > :last-child {
   margin-bottom: 0;
+}
+
+.message-back-to-top {
+  margin-top: 1.25rem;
+  padding-top: 0.7rem;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+
+.message-back-to-top button {
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.7rem;
+  font-weight: 500;
 }
 
 .markdown-body p,
