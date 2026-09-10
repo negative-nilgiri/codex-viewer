@@ -28,6 +28,7 @@ export function MermaidDiagram({ source }: { source: string }) {
   const reactId = useId()
   const diagramId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [result, setResult] = useState<RenderResult>({ source, svg: null, error: null })
+  const [showRaw, setShowRaw] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -56,9 +57,20 @@ export function MermaidDiagram({ source }: { source: string }) {
     <div className="mermaid-diagram">
       <div className="mermaid-toolbar">
         <span>Mermaid</span>
-        <CopyButton label="Copy Mermaid source" text={source} />
+        <div className="mermaid-toolbar-actions">
+          <button
+            aria-pressed={showRaw}
+            onClick={() => setShowRaw((current) => !current)}
+            type="button"
+          >
+            {showRaw ? 'Diagram' : 'Raw'}
+          </button>
+          <CopyButton label="Copy Mermaid source" text={source} />
+        </div>
       </div>
-      {current.error ? (
+      {showRaw ? (
+        <pre className="mermaid-raw"><code>{source}</code></pre>
+      ) : current.error ? (
         <div className="mermaid-error">
           <strong>Diagram could not be rendered.</strong>
           <span>{current.error}</span>

@@ -1,103 +1,170 @@
 # Agent Sessions Viewer
 
-A local, read-only viewer for Codex and Claude Code JSONL transcripts. The viewer
-incrementally stores visible user and assistant messages in SQLite, exposes
-bounded ranges through FastAPI, and displays them in a virtualized React
-transcript served by Caddy. Visible messages are rendered as GitHub-flavored
-Markdown with syntax highlighting and Mermaid diagrams.
+A local web interface for reading Codex and Claude Code session transcripts.
+It renders user and assistant messages as Markdown, remains responsive with very
+long conversations, and can follow an active session as new messages arrive.
 
-The transcript files remain the source of truth. They are mounted read-only and
-are never modified by the viewer.
+The application has four small pieces:
+
+- FastAPI discovers transcripts and incrementally indexes visible messages.
+- SQLite stores the rebuildable message index.
+- React renders only the part of a conversation currently being viewed.
+- Caddy serves the frontend and proxies API requests.
+
+Transcript files are mounted read-only and remain the source of truth. The
+viewer never modifies them.
 
 ## Requirements
 
 - Docker with Docker Compose
-- Existing Codex and/or Claude Code session directories
+- A directory containing Codex and/or Claude Code JSONL session files
+- A modern web browser
+- Optional: Python 3.10 or newer for the host-side title and counting scripts
 
-By default, Compose mounts the repository's parent `.codex_homes` directory
-once at `/sources`, read-only. This covers sibling Codex homes and the Claude
-`projects` directory without adding a Docker mount for every account. For
-another layout:
+Python, Node.js, and Caddy do not need to be installed on the host for normal
+viewer use. Docker builds everything the application requires.
 
-```bash
-cp .env.example .env
+## Quick start with the default layout
+
+The checked-in configuration expects this repository to be inside a common
+session-data directory with the following layout:
+
+```text
+.codex_homes/
+├── sessions_viewer/       # this repository
+├── codex_1/
+│   └── sessions/
+├── codex_2/
+│   └── sessions/
+└── projects/              # Claude Code project sessions
 ```
 
-Then set `VIEWER_SOURCES_ROOT` in `.env` to their common host directory. The
-entire root is exposed to the API container beneath `/sources` with
-`read_only: true`; only directories listed in `config/sources.toml` are
-scanned. The project-owned `config/` directory is mounted at `/config`, also
-read-only. The rebuildable SQLite index is kept in the `viewer-data` Docker
-volume.
-
-`config/sources.toml` assigns a source label, adapter, and container path to
-each session directory below `/sources`. Adding another source changes only
-that file, not `compose.yaml`. Discovery is recursive below those explicit
-roots; it does not depend on Codex's date directories, Claude's project
-directories, or JSONL filenames.
-
-For example:
-
-```toml
-[[sources]]
-id = "another_codex_home"
-adapter = "codex"
-path = "/sources/another_codex_home/sessions"
-```
-
-## Start the viewer
-
-Build and start FastAPI and Caddy:
+From the repository root, start the application:
 
 ```bash
 docker compose up --build -d
 ```
 
-Opening the application automatically catalogs the mounted transcripts. Discovery
-does not import complete message histories. To run the same scan explicitly:
+Then open <http://localhost:8080>.
+
+The first page load discovers available sessions. Select a session in the
+sidebar and press **Index session** to import its visible user and assistant
+messages. Turn on **Watch** when you want the open session to follow new
+messages automatically.
+
+## Configure transcript locations
+
+Compose makes one host directory available inside the API container at
+`/sources`. By default, the mounted host directory is the parent of this
+repository. To mount a different directory, create `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Set its absolute or repository-relative path:
+
+```dotenv
+VIEWER_SOURCES_ROOT=/Users/me/agent-session-data
+VIEWER_PORT=8080
+```
+
+Next, edit `config/sources.toml`. Each entry gives a source a stable name,
+selects its transcript format, and points to a directory inside `/sources`:
+
+```toml
+[[sources]]
+id = "work_codex"
+adapter = "codex"
+path = "/sources/work-codex/sessions"
+
+[[sources]]
+id = "claude"
+adapter = "claude"
+path = "/sources/projects"
+```
+
+The example above corresponds to these host directories:
+
+```text
+/Users/me/agent-session-data/work-codex/sessions
+/Users/me/agent-session-data/projects
+```
+
+Source IDs are labels chosen by you. Keep them stable because SQLite records
+and browser preferences use them to distinguish sessions. Discovery searches
+recursively below each configured path, so date folders, project folders, and
+JSONL filenames do not need a particular shape.
+
+After changing the mounted root, recreate the containers:
+
+```bash
+docker compose up --build -d
+```
+
+To confirm the resolved host mount before debugging discovery:
+
+```bash
+docker compose config
+```
+
+## Discover and read sessions
+
+Opening the viewer runs discovery automatically. Discovery catalogs session
+metadata but does not import every conversation, which keeps startup fast even
+when the source root contains many sessions.
+
+The main workflow is:
+
+1. Use **Rescan** in the sidebar when a new session does not appear.
+2. Select a session.
+3. Press **Index session** the first time it is opened.
+4. Use **Sync now** for a one-time update or enable **Watch** for the active
+   conversation.
+
+The sidebar is ordered by latest activity and grouped by day. Its collapse
+state is remembered by the browser.
+
+The same operations are available from the command line. A source ID and a
+complete session UUID or unique UUID prefix identify a session:
 
 ```bash
 docker compose exec api viewer discover
-```
-
-Index one session using a complete UUID or unique prefix:
-
-```bash
+docker compose exec api viewer discover codex_2
 docker compose exec api viewer sync codex_2 019fdbaf
-```
-
-Claude sessions use the same command:
-
-```bash
 docker compose exec api viewer sync claude 087e7ac1
 ```
 
-Open <http://localhost:8080>. The browser loads 30-message blocks around the
-visible viewport and keeps at most seven blocks (roughly 210 messages) in its
-in-memory cache. Use **Beginning** and **Latest** to move through a long session
-without downloading the entire transcript.
+## Give sessions custom titles
 
-## Session discovery
+The viewer normally derives a title from the transcript. To assign a persistent
+title, copy the complete session ID from the session header and run:
 
-Discovery recursively scans every configured source for JSONL candidates. Its
-configured adapter reads at most the first 256 KiB to recognize a main session
-and find its content-derived UUID, title, workspace, and creation timestamp.
-Unrelated JSONL and Claude subagent sidecars are ignored. Discovery never
-imports messages or advances an incremental sync cursor.
+```bash
+./scripts/session_title.py set \
+  019fdbaf-c2ea-7e50-ae8f-8fa79e733904 \
+  "Codex frontend UI"
+```
 
-The sidebar runs discovery when the viewer opens and provides **Rescan** for
-sessions created later. A discovered session is marked **Not indexed** until
-its **Index session** button is used. If a previously cataloged transcript is no
-longer mounted, it is marked **Source unavailable**; existing indexed messages
-are retained.
+Click **Rescan** in the viewer to display the new title.
 
-Sessions are sorted only by latest recorded activity and separated into local
-calendar-day groups. The sidebar can be collapsed to a narrow rail; that choice
-is remembered in browser storage.
+List all custom titles:
 
-Discovery applies persistent titles from `config/session_metadata.json`.
-Metadata is keyed only by content-derived session UUID, independently of the
-source, provider, or directory:
+```bash
+./scripts/session_title.py list
+```
+
+Remove a custom title and return to the transcript-derived title:
+
+```bash
+./scripts/session_title.py remove \
+  019fdbaf-c2ea-7e50-ae8f-8fa79e733904
+```
+
+The script updates `config/session_metadata.json` atomically. A different
+metadata file can be selected by placing `--file PATH` before the command.
+
+The underlying format is intentionally simple:
 
 ```json
 {
@@ -107,153 +174,189 @@ source, provider, or directory:
 }
 ```
 
-Only this object-valued format is accepted; the legacy `{id: "title"}` format
-is deliberately rejected. Automatic and custom titles are stored separately,
-so removing an override restores the transcript-derived title on the next
-rescan.
+Session titles are deployment configuration. Message bookmarks and bookmark
+labels are different: they are stored only in the current browser's local
+storage.
 
-Limit discovery to one source when using the CLI:
+## Reading controls
+
+- **Beginning** and **Latest** move to either end of the session.
+- Enter the displayed message number in the **# / Go** control to jump directly
+  to that message.
+- The star in a message header adds or removes a bookmark.
+- **Bookmarks** opens the saved-message list. Bookmark labels are generated
+  from message text and can be edited in place.
+- **Fold**, **Collapse all**, and **Expand all** control long message bodies.
+- The session ID, complete message Markdown, and every fenced code block have
+  dedicated copy buttons.
+
+Press **Ctrl+F** or **Cmd+F** to search the complete indexed conversation—not
+just the messages currently rendered on screen. Enter and Shift+Enter move
+between matches, and Escape closes search.
+
+Fold state, bookmarks, bookmark labels, sidebar state, and Watch preferences
+are stored in browser local storage. They do not modify SQLite or transcript
+files.
+
+## Markdown rendering
+
+User and assistant messages share the same GitHub-flavored Markdown pipeline.
+The viewer supports headings, lists, tables, task lists, blockquotes, links,
+inline code, fenced code, and raw HTML. Recognized fenced-code languages receive
+syntax highlighting.
+
+A fenced block tagged `mermaid` is rendered as a Mermaid diagram:
+
+````markdown
+```mermaid
+flowchart LR
+    JSONL --> SQLite --> Browser
+```
+````
+
+Use **Raw** in a diagram toolbar to switch between the rendered diagram and its
+original Mermaid source. Invalid diagrams display their error and source instead
+of disappearing.
+
+Raw HTML is not sanitized because this is a single-user viewer for trusted
+local transcripts. Caddy binds to `127.0.0.1` by default. Do not expose this
+application publicly or use it for untrusted transcript files.
+
+## Synchronization and stored data
+
+The first sync reads the selected transcript. Later syncs start at the last
+completely processed byte and inspect only appended JSONL records. Repeating a
+sync is safe, and truncating or replacing a transcript rebuilds only that
+session.
+
+**Watch** polls the open session every two seconds. It does not scan or import
+other sessions in the background. When the viewer is already at the end, new
+messages remain in view. When reading earlier messages, an indicator appears
+beside **Latest** instead.
+
+Only visible user and assistant text is indexed. Metadata, injected context,
+reasoning, tool calls, tool results, attachments, and other non-conversation
+records are excluded.
+
+SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`.
+It is an index, not the source of truth, and can be rebuilt from the JSONL
+transcripts.
+
+## Useful operational commands
+
+Check service status and health:
 
 ```bash
-docker compose exec api viewer discover codex_2
+docker compose ps
+curl http://localhost:8080/api/health
 ```
 
-Periodic background discovery and synchronization are intentionally deferred.
-
-Useful checks:
+Follow backend and web-server logs:
 
 ```bash
-curl http://localhost:8080/api/health
-curl http://localhost:8080/api/sessions
 docker compose logs -f api web
 ```
 
-Stop the containers without deleting the SQLite volume:
+Rebuild after changing application code:
+
+```bash
+docker compose up --build -d
+```
+
+Stop the application without deleting the SQLite index:
 
 ```bash
 docker compose down
 ```
 
-Delete the rebuildable index only when deliberately starting over:
+Delete and rebuild the index only when intentionally starting over:
 
 ```bash
 docker compose down --volumes
 ```
 
-## Synchronization behavior
+## Troubleshooting
 
-The first sync reads one complete transcript. Later syncs seek directly to the
-last completely processed byte and inspect only appended JSONL lines. A partial
-final line is left for the next sync. If the transcript is replaced or truncated,
-only that session is rebuilt.
+### No sessions appear
 
-The UI's **Sync now** button invokes the same importer for the currently open
-session. Repeating a sync is idempotent. If new messages are imported, the
-current reading position remains stable and an indicator appears beside
-**Latest**. Successful synchronization notices disappear after five seconds. Tool
-calls, tool outputs, reasoning, and injected context are not stored.
-
-The compact **Watch** toggle polls only the currently open, indexed session
-every two seconds. Polls use the same byte-offset importer, so a no-op reads
-only from the last complete JSONL offset and produces no notification. New
-messages automatically keep the view at the live tail when it was already at
-the bottom. If you have scrolled upward to read, the current position is kept
-and a small indicator appears beside **Latest**. The indicator disappears as
-soon as the newest message enters the visible range. Switching sessions,
-closing the page, or disabling the toggle stops that watcher; no other session
-is synchronized in the background. The preference is remembered per session
-in browser storage.
-
-The Codex adapter renders modern `event_msg` user and agent messages. The Claude
-adapter renders genuine user text and assistant text blocks while excluding
-local-command wrappers, metadata, thinking, tool calls, tool results,
-attachments, snapshots, and subagent transcripts. Manager/subagent views and
-client-side transcript editing remain later milestones.
-
-## Message rendering
-
-User and agent messages use the same Markdown pipeline. It supports headings,
-lists, tables, task lists, blockquotes, links, inline code, fenced code, and raw
-HTML. Fenced code is syntax-highlighted when its language is recognized. Every
-code block has a copy button, and the button in a message header copies that
-message's original Markdown.
-
-A fenced block marked `mermaid` is rendered as a diagram. Mermaid is downloaded
-by the browser only when a visible message needs it. Invalid diagrams show the
-rendering error and retain their source text instead of disappearing.
-
-Press **Ctrl+F** (or **Cmd+F** on macOS) to search the complete indexed session,
-including messages that are not mounted by the virtual list. The temporary
-search bar replaces the header actions while it is open. Enter and Shift+Enter
-move between matches, and Escape closes it. Search results scroll to and outline
-the matching message; the backend performs a literal, case-insensitive SQLite
-substring search rather than relying on the browser DOM.
-
-Raw HTML is intentionally not sanitized because this viewer is designed for a
-single user's trusted local transcripts. Keep the Caddy port bound to localhost,
-as it is in the supplied Compose configuration, and do not use this deployment
-to display untrusted session files.
-
-## Transcript controls
-
-Each message can be folded independently from its header. **Collapse all** and
-**Expand all** apply the same choice across the session, including messages
-that are not currently mounted by the virtual list. The fold state is stored in
-the browser for each source and session; it does not modify SQLite or the
-transcript. Collapsed messages skip Markdown and Mermaid rendering entirely.
-
-Enter a message number in the compact **# / Go** control to jump directly to
-that message without loading the intervening transcript. The star in each
-message header adds or removes a bookmark. The **Bookmarks** menu jumps to saved
-messages and lets you edit their automatically generated labels. Bookmarks and
-their labels are stored in browser local storage per source and session; they do
-not modify SQLite or the transcript.
-
-The session header also provides a copy button for the complete session ID.
-
-## Tests
-
-Run backend tests in Docker:
+Run discovery directly and inspect its error:
 
 ```bash
-docker compose run --build --rm backend-tests
+docker compose exec api viewer discover
+docker compose logs --tail=100 api
 ```
 
-Run the frontend lint and production build in Docker:
+Then use `docker compose config` to verify `VIEWER_SOURCES_ROOT` and make sure
+every path in `config/sources.toml` exists beneath `/sources` in the container.
+
+### A session exists but has no messages
+
+Select it and press **Index session**. The catalog and message index are
+separate on purpose. Also remember that tool-only and metadata records are not
+displayed as messages.
+
+### Compare a JSONL transcript with SQLite
+
+The diagnostic script counts messages using the same adapter rules as the
+backend:
 
 ```bash
-docker compose run --build --rm frontend-check
+./scripts/count_session_messages.py /absolute/path/to/session.jsonl
 ```
 
-For faster local development, the equivalent uv and npm commands are:
+Select an adapter explicitly only when automatic detection is insufficient:
+
+```bash
+./scripts/count_session_messages.py --adapter codex /path/to/session.jsonl
+./scripts/count_session_messages.py --adapter claude /path/to/session.jsonl
+```
+
+Its `visible messages` value is the count expected in SQLite after a successful
+sync. `jsonl lines` is larger because one transcript contains many kinds of
+records.
+
+### The browser still shows an older frontend
+
+After rebuilding the web container, reload the page so the browser fetches the
+new hashed JavaScript and CSS assets.
+
+## Development and tests
+
+Run the backend suite in Docker:
+
+```bash
+docker compose --profile test run --rm --build backend-tests
+```
+
+Run frontend lint and the production TypeScript/Vite build in Docker:
+
+```bash
+docker compose --profile test run --rm --build frontend-check
+```
+
+For local development, the backend requires Python 3.14 and
+[uv](https://docs.astral.sh/uv/), while the frontend uses Node.js and npm:
 
 ```bash
 cd backend
 uv run --group dev pytest
 
 cd ../frontend
+npm ci
 npm run lint
 npm run build
 ```
 
-Backend tests cover first import, no-op resynchronization, append-only import,
-partial final lines, transcript truncation, ignored tool events, cross-source
-UUID isolation, API pagination and search, recursive discovery, unrelated JSONL,
-Claude filtering, strict metadata migration, missing sources, schema migration,
-and persistent title overrides.
+## HTTP API
 
-## API
+The React frontend uses these endpoints:
 
 ```text
 GET  /api/health
 GET  /api/sessions
 POST /api/sessions/discover
-GET  /api/sessions/{profile}/{session_id}
-GET  /api/sessions/{profile}/{session_id}/messages?start=0&limit=30
-GET  /api/sessions/{profile}/{session_id}/search?q=substring
-POST /api/sessions/{profile}/{session_id}/sync
+GET  /api/sessions/{source_id}/{session_id}
+GET  /api/sessions/{source_id}/{session_id}/messages?start=0&limit=30
+GET  /api/sessions/{source_id}/{session_id}/search?q=substring
+POST /api/sessions/{source_id}/{session_id}/sync
 ```
-
-The list contains discovered catalog entries, including transcripts whose messages
-have not yet been indexed. Background synchronization is intentionally
-deferred.

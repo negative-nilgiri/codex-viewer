@@ -652,6 +652,28 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.mermaid-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mermaid-toolbar-actions button {
+  padding: 0.28rem 0.5rem;
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.mermaid-raw {
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  color: #adbac7;
+  background: #22272e;
+  font: 0.86rem/1.55 var(--mono);
+  white-space: pre;
+}
+
 .mermaid-svg {
   padding: 1rem;
   overflow-x: auto;
