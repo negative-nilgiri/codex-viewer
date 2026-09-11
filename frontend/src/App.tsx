@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
+  archiveSession,
   discoverSessions,
   exportBookmarkBackup,
   fetchMessages,
@@ -169,6 +170,7 @@ function Transcript({
   const [total, setTotal] = useState(session.message_count)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: -1 })
   const [syncing, setSyncing] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [newMessages, setNewMessages] = useState(0)
@@ -455,6 +457,26 @@ function Transcript({
   }, [invalidateFrom, onSynced, session, total])
 
   const watchActive = watching && session.indexed && session.source_present
+
+  async function archiveConversation() {
+    if (archiving || !session.indexed) return
+    const confirmed = window.confirm(
+      `Archive ${total} currently indexed message${total === 1 ? '' : 's'}? This does not synchronize the source first, and it overwrites any existing archive for this session.`,
+    )
+    if (!confirmed) return
+    setArchiving(true)
+    setError(null)
+    try {
+      const result = await archiveSession(session)
+      setNotice(
+        `Archived ${result.message_count} message${result.message_count === 1 ? '' : 's'}.`,
+      )
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setArchiving(false)
+    }
+  }
 
   useEffect(() => {
     if (!watchActive) return
@@ -796,6 +818,14 @@ function Transcript({
               type="button"
             >
               {syncing ? 'Syncing…' : session.indexed ? 'Sync now' : 'Index session'}
+            </button>
+            <button
+              disabled={archiving || !session.indexed}
+              onClick={() => void archiveConversation()}
+              title="Export the currently indexed conversation to durable JSONL"
+              type="button"
+            >
+              {archiving ? 'Archiving…' : 'Archive'}
             </button>
             <button
               aria-pressed={watchActive}

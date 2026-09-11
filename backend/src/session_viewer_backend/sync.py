@@ -107,6 +107,9 @@ def sync_session(
         database_path, source, requested_id
     )
     refresh_bind_mount_metadata(transcript_path)
+    validator = getattr(adapter, "validate", None)
+    if validator is not None:
+        validator(transcript_path)
     initial_stat = transcript_path.stat()
     title_overrides = (
         load_session_metadata(session_metadata_path)

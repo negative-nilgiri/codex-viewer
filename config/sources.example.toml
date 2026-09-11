@@ -1,8 +1,9 @@
 # Copy this file to config/sources.toml, then adapt it to your machine.
 #
 # Docker mounts the host directory selected by VIEWER_SOURCES_ROOT at /sources.
-# Every path below is therefore a CONTAINER path beneath /sources, not a host
-# path. When tracking a single Codex sessions directory, use:
+# External transcript paths are therefore CONTAINER paths beneath /sources, not
+# host paths. The archive source at the bottom uses its own /archives mount.
+# When tracking a single Codex sessions directory, use:
 #
 #   .env:
 #     VIEWER_SOURCES_ROOT=/Users/alice/.codex/sessions
@@ -18,7 +19,7 @@
 # browser settings use it as part of a session's identity.
 id = "personal"
 
-# Supported values are "codex" and "claude". The adapter describes the JSONL
+# Supported values are "codex", "claude", and "archive". The adapter describes the JSONL
 # format; it does not affect where files are discovered.
 adapter = "codex"
 
@@ -48,3 +49,10 @@ path = "/sources"
 # id = "claude"
 # adapter = "claude"
 # path = "/sources/claude-projects"
+
+# Archives created by this viewer use a separate writable mount. Keep this entry
+# enabled to rediscover an exported conversation as an ordinary session.
+[[sources]]
+id = "archive"
+adapter = "archive"
+path = "/archives"

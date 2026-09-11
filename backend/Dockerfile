@@ -22,9 +22,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
     VIEWER_DATABASE=/data/viewer.sqlite3 \
     VIEWER_SOURCES_FILE=/config/sources.toml \
     VIEWER_SESSION_METADATA_FILE=/config/session_metadata.json \
-    VIEWER_BOOKMARKS_DIRECTORY=/data/bookmarks
+    VIEWER_BOOKMARKS_DIRECTORY=/data/bookmarks \
+    VIEWER_ARCHIVES_DIRECTORY=/data/archives
 
-RUN mkdir -p /config /data /sources /data/bookmarks
+RUN mkdir -p /config /data /sources /data/bookmarks /data/archives
 
 EXPOSE 8000
 

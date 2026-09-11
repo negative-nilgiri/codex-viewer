@@ -37,6 +37,15 @@ export type SyncResult = {
   rebuilt: boolean
 }
 
+export type ArchiveResult = {
+  profile: string
+  session_id: string
+  path: string
+  message_count: number
+  exported_at: string
+  sha256: string
+}
+
 export type DiscoveryResult = {
   sources: string[]
   found: number
@@ -105,6 +114,10 @@ export function fetchMessages(
 
 export function syncSession(session: SessionSummary): Promise<SyncResult> {
   return request<SyncResult>(`${sessionPath(session)}/sync`, { method: 'POST' })
+}
+
+export function archiveSession(session: SessionSummary): Promise<ArchiveResult> {
+  return request<ArchiveResult>(`${sessionPath(session)}/archive`, { method: 'POST' })
 }
 
 export function searchMessages(

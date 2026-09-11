@@ -11,6 +11,7 @@ services:
       VIEWER_SOURCES_FILE: /config/sources.toml
       VIEWER_SESSION_METADATA_FILE: /config/session_metadata.json
       VIEWER_BOOKMARKS_DIRECTORY: /bookmarks
+      VIEWER_ARCHIVES_DIRECTORY: /archives
     volumes:
       - type: bind
         source: ${VIEWER_SOURCES_ROOT:-..}
@@ -26,6 +27,9 @@ services:
       - type: bind
         source: ./bookmarks
         target: /bookmarks
+      - type: bind
+        source: ${VIEWER_ARCHIVES_ROOT:-./archives}
+        target: /archives
     restart: unless-stopped
 
   web:

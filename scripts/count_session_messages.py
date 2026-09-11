@@ -17,6 +17,11 @@ from session_viewer_backend.adapters import get_adapter  # noqa: E402
 
 
 def detect_adapter(event: dict) -> str:
+    if (
+        event.get("type") == "session"
+        and event.get("schema") == "session-viewer-archive"
+    ):
+        return "archive"
     if event.get("type") in {"session_meta", "event_msg", "response_item"}:
         return "codex"
     if "sessionId" in event or "message" in event or "isSidechain" in event:
@@ -26,12 +31,12 @@ def detect_adapter(event: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Count visible conversation messages in a Codex or Claude JSONL file."
+        description="Count visible conversation messages in a supported session JSONL file."
     )
     parser.add_argument("path", type=Path, help="path to the session JSONL file")
     parser.add_argument(
         "--adapter",
-        choices=("auto", "codex", "claude"),
+        choices=("auto", "archive", "codex", "claude"),
         default="auto",
         help="transcript format (default: auto-detect)",
     )

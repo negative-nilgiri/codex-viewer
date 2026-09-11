@@ -4,13 +4,14 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, ValidationError
 
+from .archive import ArchiveError, export_archive
 from .bookmarks import BookmarkBackupError, load_backup, save_backup
 from .config import Settings
 from .database import initialize
 from .discovery import discover_sessions
 from .repository import get_messages, get_session, list_sessions, search_messages
 from .rollout import RolloutError
-from .sources import SourceConfigurationError, load_sources
+from .sources import SourceConfigurationError, load_sources, select_sources
 from .sync import sync_session
 
 
@@ -156,6 +157,22 @@ def create_app(settings: Settings | None = None):
         except (OSError, RolloutError, SourceConfigurationError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return result.__dict__
+
+    @application.post("/api/sessions/{profile}/{session_id}/archive")
+    def archive(profile: str, session_id: str):
+        try:
+            sources = load_sources(configured.sources_path)
+            source = select_sources(sources, profile)[0]
+            result = export_archive(
+                configured.database_path,
+                configured.archives_path,
+                profile,
+                session_id,
+                source.adapter,
+            )
+        except (ArchiveError, OSError, SourceConfigurationError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return result.as_dict()
 
     return application
 

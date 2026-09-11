@@ -1,8 +1,10 @@
+from .archive import ArchiveAdapter
 from .claude import ClaudeAdapter
 from .codex import CodexAdapter
 
 
 ADAPTERS = {
+    "archive": ArchiveAdapter(),
     "claude": ClaudeAdapter(),
     "codex": CodexAdapter(),
 }

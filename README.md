@@ -12,7 +12,8 @@ The application has four small pieces:
 - Caddy serves the frontend and proxies API requests.
 
 Transcript files are mounted read-only and remain the source of truth. The
-viewer never modifies them.
+viewer never modifies them. Conversation archives created explicitly from the
+UI or CLI use a separate writable directory.
 
 ## Requirements
 
@@ -76,6 +77,7 @@ directory itself, so configure `.env` with its absolute path:
 
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
+VIEWER_ARCHIVES_ROOT=./archives
 VIEWER_PORT=8080
 ```
 
@@ -110,6 +112,7 @@ Set the common parent as the mount:
 
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
+VIEWER_ARCHIVES_ROOT=./archives
 VIEWER_PORT=8080
 ```
 
@@ -142,9 +145,12 @@ Here:
 - `id` is a label chosen by you. It is displayed in the viewer and is not an
   account name. Keep it stable because it becomes part of the indexed session
   identity and browser preferences.
-- `adapter` selects the transcript format: `codex` or `claude`.
+- `adapter` selects the transcript format: `codex`, `claude`, or the viewer's
+  own `archive` format.
 - `path` is always a path inside the container and must be reachable beneath
-  `/sources`. Discovery searches it recursively for supported JSONL files.
+  `/sources` for external transcript sources. The built-in archive source uses
+  the separate `/archives` writable mount. Discovery searches either path
+  recursively for supported JSONL files.
 
 Start the application from the repository root:
 
@@ -157,8 +163,9 @@ sessions. Select one and press **Index session** to import its visible messages.
 Enable **Watch** only when you want the open session to follow new messages.
 
 The comments in `config/sources.example.toml` repeat these mapping rules. All
-configured source paths must resolve beneath the one host directory selected by
-`VIEWER_SOURCES_ROOT`.
+external transcript source paths must resolve beneath the one host directory
+selected by `VIEWER_SOURCES_ROOT`; the archive source is the one documented
+exception because it uses `/archives`.
 
 After changing `.env` or its mounted root, recreate the containers. To inspect
 the exact resolved mount before debugging discovery, run:
@@ -177,7 +184,7 @@ It is only a convenience layer; the equivalent Docker commands remain valid.
 First-time setup and startup:
 
 ```bash
-just setup       # Create missing .env, sources.toml, and bookmarks/
+just setup       # Create missing config, bookmarks/, and the archive directory
 # Edit .env and config/sources.toml now.
 just up          # Build and start
 ```
@@ -200,6 +207,7 @@ just discover
 just sources
 just discover-source personal
 just sync personal 019fdbaf
+just archive personal 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
 ```
 
 Validation and utilities:
@@ -242,6 +250,60 @@ docker compose exec api viewer discover personal
 docker compose exec api viewer sync personal 019fdbaf
 docker compose exec api viewer sync claude 087e7ac1
 ```
+
+## Archive a conversation
+
+**Archive** writes the selected conversation to the viewer's stable JSONL
+format. It exports only messages already present in SQLite, so press **Sync
+now** first when the source may have newer messages. Export is explicit: Watch
+and normal synchronization never write archives.
+
+By default Compose enables a writable bind mount:
+
+```text
+Host:      ./archives
+Container: /archives
+```
+
+The directory is gitignored. To store archives in a backed-up location, put an
+absolute host path in `.env`:
+
+```dotenv
+VIEWER_ARCHIVES_ROOT=/Users/me/Documents/agent-conversation-archives
+```
+
+Keep this source in `config/sources.toml` so exported files can be discovered
+and viewed like any other session:
+
+```toml
+[[sources]]
+id = "archive"
+adapter = "archive"
+path = "/archives"
+```
+
+From the UI, open an indexed session and press **Archive**. The confirmation
+shows how many currently indexed messages will be written. From the command
+line, use the full session ID:
+
+```bash
+just archive personal 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
+# Equivalent:
+docker compose exec api viewer archive \
+  personal 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
+```
+
+The result atomically overwrites `archives/<session-id>.jsonl`. A file contains
+one versioned session header, ordered user/assistant Markdown messages, and a
+final message count plus SHA-256 checksum. The archive adapter verifies that
+footer before importing; a truncated or edited file fails loudly. Tool calls,
+tool results, hidden reasoning, and injected context are intentionally absent,
+because archives preserve the readable conversation rather than the vendor's
+complete execution log.
+
+After the first export, press **Rescan** (or run `just discover-source archive`),
+then open and index the copy under the `archive` source. The original and the
+archived copy remain separate because source ID is part of session identity.
 
 ## Give sessions custom titles
 
@@ -298,6 +360,8 @@ exported as durable snapshots from the viewer.
   current list. **Restore backup** confirms and then replaces the browser list
   directly; it does not scan or synchronize the transcript.
 - **Fold**, **Collapse all**, and **Expand all** control long message bodies.
+- **Archive** atomically exports the currently indexed conversation; it does
+  not synchronize the source first.
 - Messages with at least two headings have an **Outline** button. The outline is
   closed by default and provides quick jumps within that message.
 - Rendered messages substantially taller than the viewport have a compact
@@ -388,6 +452,11 @@ SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`.
 It is an index, not the source of truth, and can be rebuilt from the JSONL
 transcripts.
 
+Conversation archives live in the writable directory selected by
+`VIEWER_ARCHIVES_ROOT` (`./archives` by default). Unlike SQLite, these are
+intended as durable, vendor-neutral conversation copies. Back that directory up
+if the exports matter to you.
+
 ## Useful operational commands
 
 Check service status and health:
@@ -433,7 +502,8 @@ docker compose logs --tail=100 api
 ```
 
 Then use `docker compose config` to verify `VIEWER_SOURCES_ROOT` and make sure
-every path in `config/sources.toml` exists beneath `/sources` in the container.
+every external path in `config/sources.toml` exists beneath `/sources` in the
+container. The archive adapter should instead point to `/archives`.
 
 ### A session exists but has no messages
 
@@ -455,6 +525,7 @@ Select an adapter explicitly only when automatic detection is insufficient:
 ```bash
 ./scripts/count_session_messages.py --adapter codex /path/to/session.jsonl
 ./scripts/count_session_messages.py --adapter claude /path/to/session.jsonl
+./scripts/count_session_messages.py --adapter archive /path/to/archive.jsonl
 ```
 
 Its `visible messages` value is the count expected in SQLite after a successful
@@ -505,4 +576,5 @@ GET  /api/sessions/{source_id}/{session_id}
 GET  /api/sessions/{source_id}/{session_id}/messages?start=0&limit=30
 GET  /api/sessions/{source_id}/{session_id}/search?q=substring
 POST /api/sessions/{source_id}/{session_id}/sync
+POST /api/sessions/{source_id}/{session_id}/archive
 ```

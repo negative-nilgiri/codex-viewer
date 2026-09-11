@@ -53,6 +53,7 @@ def make_client(tmp_path, message_count=4):
         sources_path,
         metadata_path,
         tmp_path / "bookmarks",
+        tmp_path / "archives",
     )
     sync_session(
         settings.database_path,
@@ -134,3 +135,14 @@ def test_bookmark_backup_export_overwrites_and_restore_reads_snapshot(tmp_path):
         ]
         backup = json.loads((tmp_path / "bookmarks" / f"{SESSION_ID}.json").read_text())
         assert backup["bookmarks"] == restored.json()["bookmarks"]
+
+
+def test_archive_endpoint_exports_current_index_without_syncing(tmp_path):
+    with make_client(tmp_path, message_count=3) as client:
+        response = client.post(f"/api/sessions/codex_2/{SESSION_ID}/archive")
+
+        assert response.status_code == 200
+        assert response.json()["message_count"] == 3
+        archive = tmp_path / "archives" / f"{SESSION_ID}.jsonl"
+        assert archive.is_file()
+        assert json.loads(archive.read_text().splitlines()[-1])["message_count"] == 3

@@ -2,10 +2,11 @@ import argparse
 from dataclasses import asdict
 import json
 
+from .archive import ArchiveError, export_archive
 from .config import Settings
 from .discovery import discover_sessions
 from .rollout import RolloutError
-from .sources import SourceConfigurationError, load_sources
+from .sources import SourceConfigurationError, load_sources, select_sources
 from .sync import sync_session
 
 
@@ -20,6 +21,11 @@ def parse_args(argv=None):
         "source", help="Configured source label, for example personal or claude"
     )
     sync_parser.add_argument("session_id", help="Full session UUID or unique prefix")
+    archive_parser = commands.add_parser(
+        "archive", help="Export one indexed conversation to stable archive JSONL"
+    )
+    archive_parser.add_argument("source", help="Configured source label")
+    archive_parser.add_argument("session_id", help="Full indexed session UUID")
     discover_parser = commands.add_parser(
         "discover", help="Catalog mounted transcripts without indexing their messages"
     )
@@ -67,6 +73,19 @@ def main(argv=None):
         except (OSError, RolloutError, ValueError) as error:
             raise SystemExit(str(error)) from error
         print(json.dumps(asdict(result), indent=2))
+    elif args.command == "archive":
+        try:
+            source = select_sources(sources, args.source)[0]
+            result = export_archive(
+                settings.database_path,
+                settings.archives_path,
+                args.source,
+                args.session_id.lower(),
+                source.adapter,
+            )
+        except (ArchiveError, OSError, SourceConfigurationError) as error:
+            raise SystemExit(str(error)) from error
+        print(json.dumps(result.as_dict(), indent=2))
     elif args.command == "discover":
         try:
             result = discover_sessions(

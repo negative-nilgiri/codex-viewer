@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 SOURCE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*$")
-SUPPORTED_ADAPTERS = {"claude", "codex"}
+SUPPORTED_ADAPTERS = {"archive", "claude", "codex"}
 
 
 class SourceConfigurationError(ValueError):

@@ -17,7 +17,7 @@ setup:
         cp config/sources.example.toml config/sources.toml
         echo "Created config/sources.toml; configure its source paths before starting."
     fi
-    mkdir -p bookmarks
+    mkdir -p bookmarks "${VIEWER_ARCHIVES_ROOT:-./archives}"
 
 # Build images and start the viewer in the background.
 up: setup
@@ -80,6 +80,10 @@ discover-source source:
 sync source session:
     docker compose exec api viewer sync {{quote(source)}} {{quote(session)}}
 
+# Export the currently indexed messages from one session to durable archive JSONL.
+archive source session:
+    docker compose exec api viewer archive {{quote(source)}} {{quote(session)}}
+
 # Run all focused backend and frontend checks.
 test: test-backend test-frontend
 
@@ -107,6 +111,6 @@ title-remove session:
 count transcript:
     ./scripts/count_session_messages.py {{quote(transcript)}}
 
-# Count visible messages using an explicit codex or claude adapter.
+# Count visible messages using an explicit archive, codex, or claude adapter.
 count-as adapter transcript:
     ./scripts/count_session_messages.py --adapter {{quote(adapter)}} {{quote(transcript)}}
