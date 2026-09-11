@@ -25,6 +25,24 @@ viewer never modifies them.
 Python, Node.js, and Caddy do not need to be installed on the host for normal
 viewer use. Docker builds everything the application requires.
 
+## Common session locations
+
+The tools normally store their JSONL session files beneath these directories:
+
+| Tool | Common default directory |
+| --- | --- |
+| Codex | `$HOME/.codex/sessions` |
+| Claude Code | `$HOME/.claude/projects` |
+
+These are conventional defaults, not paths hard-coded by the viewer. Use the
+actual locations on your machine if either tool has been configured with a
+different home directory.
+
+`$HOME` above is shell notation for your user home. In `.env`, use the expanded
+absolute path—for example `/Users/me/.codex/sessions`—rather than writing the
+literal `$HOME` expression. Docker Compose mounts `VIEWER_SOURCES_ROOT` directly
+and shell-style expansion inside `.env` should not be relied upon.
+
 ## Quick start
 
 `VIEWER_SOURCES_ROOT` is the deepest common host directory containing every
