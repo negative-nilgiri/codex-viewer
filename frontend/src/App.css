@@ -784,6 +784,48 @@ button:disabled {
   display: inline-block;
 }
 
+.mermaid-legend {
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.mermaid-legend > strong {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mermaid-legend ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+}
+
+.mermaid-legend li {
+  line-height: 1;
+}
+
+.mermaid-legend-item {
+  padding: 0.28rem 0.48rem;
+  display: inline-block;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.28rem;
+  color: var(--heading);
+  background: var(--background);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
 .mermaid-loading,
 .mermaid-error {
   padding: 1rem;

@@ -333,6 +333,19 @@ Use **Raw** in a diagram toolbar to switch between the rendered diagram and its
 original Mermaid source. Invalid diagrams display their error and source instead
 of disappearing.
 
+When a diagram declares styled classes with `classDef`, the viewer adds a
+compact legend beneath the rendered SVG. The class name is used as its label and
+the badge reflects its `fill`, `stroke`, and `color` properties:
+
+```mermaid
+flowchart LR
+    inside[Inside the system]:::boundary
+classDef boundary fill:#fff2cc,stroke:#b38f00,color:#111;
+```
+
+The legend is derived without changing the Mermaid source or graph layout. It
+is shown only in diagram mode and only when styled classes are present.
+
 Raw HTML is not sanitized because this is a single-user viewer for trusted
 local transcripts. Caddy binds to `127.0.0.1` by default. Do not expose this
 application publicly or use it for untrusted transcript files.
