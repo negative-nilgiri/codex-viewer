@@ -19,6 +19,7 @@ viewer never modifies them.
 - Docker with Docker Compose
 - A directory containing Codex and/or Claude Code JSONL session files
 - A modern web browser
+- Optional: [`just`](https://just.systems/) for concise project commands
 - Optional: Python 3.10 or newer for the host-side title and counting scripts
 
 Python, Node.js, and Caddy do not need to be installed on the host for normal
@@ -116,6 +117,10 @@ path = "/sources/claude-projects"
 
 Here:
 
+- A **source** is one configured directory tree containing session JSONL files.
+  It has a stable label, one transcript-format adapter, and one path inside the
+  container. A source can contain any number of sessions recursively; it does
+  not mean one session and does not have to mean one account.
 - `id` is a label chosen by you. It is displayed in the viewer and is not an
   account name. Keep it stable because it becomes part of the indexed session
   identity and browser preferences.
@@ -145,6 +150,53 @@ docker compose up --build -d
 docker compose config
 ```
 
+## Command shortcuts with `just`
+
+The checked-in `justfile` provides short names for routine commands. Running
+`just` without arguments prints the complete command list with descriptions.
+It is only a convenience layer; the equivalent Docker commands remain valid.
+
+First-time setup and startup:
+
+```bash
+just setup       # Create missing .env, sources.toml, and bookmarks/
+# Edit .env and config/sources.toml now.
+just up          # Build and start
+```
+
+Daily operation:
+
+```bash
+just start
+just status
+just health
+just logs
+just logs-api
+just down
+```
+
+Discovery and indexing:
+
+```bash
+just discover
+just sources
+just discover-source personal
+just sync personal 019fdbaf
+```
+
+Validation and utilities:
+
+```bash
+just test
+just test-backend
+just test-frontend
+just title-list
+just title-set 019fdbaf-c2ea-7e50-ae8f-8fa79e733904 "Codex frontend UI"
+just title-remove 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
+just count /absolute/path/to/session.jsonl
+just count-as claude /absolute/path/to/session.jsonl
+```
+
 ## Discover and read sessions
 
 Opening the viewer runs discovery automatically. Discovery catalogs session
@@ -166,6 +218,7 @@ The same operations are available from the command line. A source ID and a
 complete session UUID or unique UUID prefix identify a session:
 
 ```bash
+docker compose exec api viewer sources
 docker compose exec api viewer discover
 docker compose exec api viewer discover personal
 docker compose exec api viewer sync personal 019fdbaf
@@ -252,24 +305,20 @@ syntax highlighting.
 
 Headings receive message-scoped anchors, with a small `#` link visible only on
 hover. Ordinary same-document Markdown links are resolved inside their own
-message, so Codex can produce a compact table of contents without conflicting
-with identically named headings elsewhere in the conversation:
+message without conflicting with identically named headings elsewhere in the
+conversation. This lets Codex refer naturally to another section of a long
+answer:
 
 ```markdown
-- [Architecture](#architecture)
-- [Trade-offs](#trade-offs)
+Implementation details are under [Architecture](#architecture).
 
 ## Architecture
 ...
-
-## Trade-offs
-...
 ```
 
-For long answers, ask Codex to start with a short Markdown table of contents
-using this standard link format. These anchors navigate the currently rendered
-message; durable links that reopen a session at a specific heading are not yet
-part of the URL scheme.
+The viewer's **Outline** control already provides a table of contents. These
+anchors navigate the currently rendered message; durable links that reopen a
+session at a specific heading are not yet part of the URL scheme.
 
 A fenced block tagged `mermaid` is rendered as a Mermaid diagram:
 

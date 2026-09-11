@@ -12,8 +12,13 @@ from .sync import sync_session
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Index local agent session transcripts")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser(
+        "sources", help="List configured transcript sources without scanning them"
+    )
     sync_parser = commands.add_parser("sync", help="Incrementally index one session")
-    sync_parser.add_argument("source", help="Configured source, for example codex_2 or claude")
+    sync_parser.add_argument(
+        "source", help="Configured source label, for example personal or claude"
+    )
     sync_parser.add_argument("session_id", help="Full session UUID or unique prefix")
     discover_parser = commands.add_parser(
         "discover", help="Catalog mounted transcripts without indexing their messages"
@@ -33,7 +38,24 @@ def main(argv=None):
         sources = load_sources(settings.sources_path)
     except SourceConfigurationError as error:
         raise SystemExit(str(error)) from error
-    if args.command == "sync":
+    if args.command == "sources":
+        print(
+            json.dumps(
+                {
+                    "sources": [
+                        {
+                            "id": source.id,
+                            "adapter": source.adapter,
+                            "path": str(source.path),
+                            "available": source.path.is_dir(),
+                        }
+                        for source in sources
+                    ]
+                },
+                indent=2,
+            )
+        )
+    elif args.command == "sync":
         try:
             result = sync_session(
                 settings.database_path,
