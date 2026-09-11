@@ -100,6 +100,10 @@ def test_session_metadata_rejects_legacy_title_values(tmp_path):
         load_session_metadata(metadata)
 
 
+def test_missing_session_metadata_is_an_empty_title_map(tmp_path):
+    assert load_session_metadata(tmp_path / "missing.json") == {}
+
+
 def test_discovery_repairs_a_path_assigned_to_historical_session_id(tmp_path):
     database = tmp_path / "viewer.sqlite3"
     sessions_root, rollout = make_rollout(tmp_path)

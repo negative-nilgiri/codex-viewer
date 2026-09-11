@@ -43,6 +43,8 @@ def load_session_metadata(path: Path):
     try:
         with path.open() as source:
             parsed = json.load(source)
+    except FileNotFoundError:
+        return {}
     except OSError as error:
         raise ValueError(f"Cannot read session metadata {path}: {error}") from error
     except json.JSONDecodeError as error:

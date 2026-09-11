@@ -6,3 +6,5 @@ backend/**/__pycache__/
 frontend/dist/
 frontend/node_modules/
 bookmarks/
+config/session_metadata.json
+config/sources.toml

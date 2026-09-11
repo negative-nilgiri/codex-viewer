@@ -24,87 +24,124 @@ viewer never modifies them.
 Python, Node.js, and Caddy do not need to be installed on the host for normal
 viewer use. Docker builds everything the application requires.
 
-## Quick start with the default layout
+## Quick start
 
-The checked-in configuration expects this repository to be inside a common
-session-data directory with the following layout:
+`VIEWER_SOURCES_ROOT` is the deepest common host directory containing every
+session directory you want the viewer to access. Docker mounts this one
+directory read-only at `/sources`; the source configuration selects directories
+inside that mount. Do not choose a broader parent than necessary.
 
-```text
-.codex_homes/
-├── sessions_viewer/       # this repository
-├── codex_1/
-│   └── sessions/
-├── codex_2/
-│   └── sessions/
-└── projects/              # Claude Code project sessions
-```
-
-From the repository root, start the application:
-
-```bash
-docker compose up --build -d
-```
-
-Then open <http://localhost:8080>.
-
-The first page load discovers available sessions. Select a session in the
-sidebar and press **Index session** to import its visible user and assistant
-messages. Turn on **Watch** when you want the open session to follow new
-messages automatically.
-
-## Configure transcript locations
-
-Compose makes one host directory available inside the API container at
-`/sources`. By default, the mounted host directory is the parent of this
-repository. To mount a different directory, create `.env`:
+Start by creating local configuration files from the documented examples:
 
 ```bash
 cp .env.example .env
+cp config/sources.example.toml config/sources.toml
 ```
 
-Set its absolute or repository-relative path:
+Both resulting files are gitignored, so machine-specific paths and source names
+will not be committed.
+
+### Example: one Codex sessions directory
+
+Suppose the only sessions you want to track are beneath:
+
+```text
+/Users/me/.codex/sessions/
+├── 2026/
+│   └── 09/...
+└── ...
+```
+
+The deepest directory containing everything you want is the `sessions`
+directory itself, so configure `.env` with its absolute path:
 
 ```dotenv
-VIEWER_SOURCES_ROOT=/Users/me/agent-session-data
+VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
 VIEWER_PORT=8080
 ```
 
-Next, edit `config/sources.toml`. Each entry gives a source a stable name,
-selects its transcript format, and points to a directory inside `/sources`:
+That exact directory becomes `/sources` inside the container:
+
+```text
+Host:      /Users/me/.codex/sessions
+Container: /sources
+```
+
+Therefore `config/sources.toml` uses `/sources`, not the host path:
 
 ```toml
 [[sources]]
-id = "work_codex"
+id = "personal"
 adapter = "codex"
-path = "/sources/work-codex/sessions"
+path = "/sources"
+```
+
+### Example: several session directories
+
+Suppose you want all three of these directories:
+
+```text
+/Users/me/agent-sessions/          # deepest common parent
+├── personal/sessions/             # Codex
+├── work/sessions/                 # Codex
+└── claude-projects/               # Claude Code
+```
+
+Set the common parent as the mount:
+
+```dotenv
+VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
+VIEWER_PORT=8080
+```
+
+The paths beneath that parent retain the same relative layout beneath
+`/sources`, so configure all three explicitly:
+
+```toml
+[[sources]]
+id = "personal"
+adapter = "codex"
+path = "/sources/personal/sessions"
+
+[[sources]]
+id = "work"
+adapter = "codex"
+path = "/sources/work/sessions"
 
 [[sources]]
 id = "claude"
 adapter = "claude"
-path = "/sources/projects"
+path = "/sources/claude-projects"
 ```
 
-The example above corresponds to these host directories:
+Here:
 
-```text
-/Users/me/agent-session-data/work-codex/sessions
-/Users/me/agent-session-data/projects
-```
+- `id` is a label chosen by you. It is displayed in the viewer and is not an
+  account name. Keep it stable because it becomes part of the indexed session
+  identity and browser preferences.
+- `adapter` selects the transcript format: `codex` or `claude`.
+- `path` is always a path inside the container and must be reachable beneath
+  `/sources`. Discovery searches it recursively for supported JSONL files.
 
-Source IDs are labels chosen by you. Keep them stable because SQLite records
-and browser preferences use them to distinguish sessions. Discovery searches
-recursively below each configured path, so date folders, project folders, and
-JSONL filenames do not need a particular shape.
-
-After changing the mounted root, recreate the containers:
+Start the application from the repository root:
 
 ```bash
 docker compose up --build -d
 ```
 
-To confirm the resolved host mount before debugging discovery:
+Then open <http://localhost:8080>. The first page load discovers available
+sessions. Select one and press **Index session** to import its visible messages.
+Enable **Watch** only when you want the open session to follow new messages.
+
+The comments in `config/sources.example.toml` repeat these mapping rules. All
+configured source paths must resolve beneath the one host directory selected by
+`VIEWER_SOURCES_ROOT`.
+
+After changing `.env` or its mounted root, recreate the containers. To inspect
+the exact resolved mount before debugging discovery, run:
 
 ```bash
+docker compose up --build -d
 docker compose config
 ```
 
@@ -130,8 +167,8 @@ complete session UUID or unique UUID prefix identify a session:
 
 ```bash
 docker compose exec api viewer discover
-docker compose exec api viewer discover codex_2
-docker compose exec api viewer sync codex_2 019fdbaf
+docker compose exec api viewer discover personal
+docker compose exec api viewer sync personal 019fdbaf
 docker compose exec api viewer sync claude 087e7ac1
 ```
 
