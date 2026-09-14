@@ -12,6 +12,7 @@ services:
       VIEWER_SESSION_METADATA_FILE: /config/session_metadata.json
       VIEWER_BOOKMARKS_DIRECTORY: /bookmarks
       VIEWER_ARCHIVES_DIRECTORY: /archives
+      VIEWER_DOCUMENTS_DIRECTORY: /documents
     volumes:
       - type: bind
         source: ${VIEWER_SOURCES_ROOT:-..}
@@ -30,6 +31,10 @@ services:
       - type: bind
         source: ${VIEWER_ARCHIVES_ROOT:-./archives}
         target: /archives
+      - type: bind
+        source: ${VIEWER_DOCUMENTS_ROOT:-./documents}
+        target: /documents
+        read_only: true
     restart: unless-stopped
 
   web:

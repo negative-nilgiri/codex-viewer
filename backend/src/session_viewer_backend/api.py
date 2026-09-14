@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .archive import ArchiveError, export_archive
@@ -9,6 +10,7 @@ from .bookmarks import BookmarkBackupError, load_backup, save_backup
 from .config import Settings
 from .database import initialize
 from .discovery import discover_sessions
+from .documents import DocumentError, list_documents, load_document
 from .repository import get_messages, get_session, list_sessions, search_messages
 from .rollout import RolloutError
 from .sources import SourceConfigurationError, load_sources, select_sources
@@ -52,6 +54,37 @@ def create_app(settings: Settings | None = None):
     @application.get("/api/sessions")
     def sessions(limit: int = Query(default=100, ge=1, le=500)):
         return {"items": list_sessions(configured.database_path, limit)}
+
+    @application.get("/api/documents")
+    def documents():
+        try:
+            return {
+                "items": [
+                    document.as_dict()
+                    for document in list_documents(configured.documents_path)
+                ]
+            }
+        except DocumentError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @application.get("/api/documents/{document_id}")
+    def document(document_id: str, request: Request):
+        try:
+            loaded = load_document(configured.documents_path, document_id)
+        except DocumentError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        headers = {
+            "ETag": loaded.etag,
+            "Cache-Control": "no-cache",
+            "X-Document-Modified-At": loaded.summary.modified_at,
+        }
+        if request.headers.get("if-none-match") == loaded.etag:
+            return Response(status_code=304, headers=headers)
+        return PlainTextResponse(
+            loaded.markdown,
+            media_type="text/markdown",
+            headers=headers,
+        )
 
     @application.post("/api/sessions/discover")
     def discover(profile: str | None = Query(default=None)):

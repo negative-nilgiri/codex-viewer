@@ -17,7 +17,7 @@ setup:
         cp config/sources.example.toml config/sources.toml
         echo "Created config/sources.toml; configure its source paths before starting."
     fi
-    mkdir -p bookmarks "${VIEWER_ARCHIVES_ROOT:-./archives}"
+    mkdir -p bookmarks "${VIEWER_ARCHIVES_ROOT:-./archives}" "${VIEWER_DOCUMENTS_ROOT:-./documents}"
 
 # Build images and start the viewer in the background.
 up: setup

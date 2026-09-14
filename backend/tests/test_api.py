@@ -48,12 +48,15 @@ def make_client(tmp_path, message_count=4):
     )
     metadata_path = tmp_path / "session_metadata.json"
     metadata_path.write_text("{}")
+    documents_path = tmp_path / "documents"
+    documents_path.mkdir()
     settings = Settings(
         tmp_path / "viewer.sqlite3",
         sources_path,
         metadata_path,
         tmp_path / "bookmarks",
         tmp_path / "archives",
+        documents_path,
     )
     sync_session(
         settings.database_path,
@@ -146,3 +149,36 @@ def test_archive_endpoint_exports_current_index_without_syncing(tmp_path):
         archive = tmp_path / "archives" / f"{SESSION_ID}.jsonl"
         assert archive.is_file()
         assert json.loads(archive.read_text().splitlines()[-1])["message_count"] == 3
+
+
+def test_documents_are_listed_recursively_and_read_directly(tmp_path):
+    client = make_client(tmp_path)
+    documents = tmp_path / "documents"
+    (documents / "notes").mkdir()
+    (documents / "notes" / "diagram.md").write_text(
+        "```markdown\n# Not the title\n```\n\n# Actual title\n\n```mermaid\nA --> B\n```\n"
+    )
+    (documents / "other.md").write_text("Fallback content")
+
+    with client:
+        response = client.get("/api/documents")
+        assert response.status_code == 200
+        items = response.json()["items"]
+        assert [(item["path"], item["title"]) for item in items] == [
+            ("notes/diagram.md", "Actual title"),
+            ("other.md", "other"),
+        ]
+
+        document = client.get(f"/api/documents/{items[0]['id']}")
+        assert document.status_code == 200
+        assert document.headers["content-type"].startswith("text/markdown")
+        assert "```mermaid" in document.text
+        assert document.headers["etag"]
+
+        unchanged = client.get(
+            f"/api/documents/{items[0]['id']}",
+            headers={"If-None-Match": document.headers["etag"]},
+        )
+        assert unchanged.status_code == 304
+
+        assert client.get("/api/documents/not-valid!").status_code == 404

@@ -19,10 +19,12 @@ async function copyText(text: string) {
 
 export function CopyButton({
   className = '',
+  disabled = false,
   label,
   text,
 }: {
   className?: string
+  disabled?: boolean
   label: string
   text: string
 }) {
@@ -53,6 +55,7 @@ export function CopyButton({
     <button
       aria-label={label}
       className={`copy-button ${className}`.trim()}
+      disabled={disabled}
       onClick={copy}
       title={label}
       type="button"

@@ -23,9 +23,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
     VIEWER_SOURCES_FILE=/config/sources.toml \
     VIEWER_SESSION_METADATA_FILE=/config/session_metadata.json \
     VIEWER_BOOKMARKS_DIRECTORY=/data/bookmarks \
-    VIEWER_ARCHIVES_DIRECTORY=/data/archives
+    VIEWER_ARCHIVES_DIRECTORY=/data/archives \
+    VIEWER_DOCUMENTS_DIRECTORY=/documents
 
-RUN mkdir -p /config /data /sources /data/bookmarks /data/archives
+RUN mkdir -p /config /data /sources /documents /data/bookmarks /data/archives
 
 EXPOSE 8000
 

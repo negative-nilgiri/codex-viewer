@@ -7,5 +7,7 @@ frontend/dist/
 frontend/node_modules/
 bookmarks/
 archives/
+documents/*
+!documents/.gitkeep
 config/session_metadata.json
 config/sources.toml

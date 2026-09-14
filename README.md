@@ -1,8 +1,9 @@
 # Agent Sessions Viewer
 
-A local web interface for reading Codex and Claude Code session transcripts.
-It renders user and assistant messages as Markdown, remains responsive with very
-long conversations, and can follow an active session as new messages arrive.
+A local web interface for reading Codex and Claude Code session transcripts and
+ordinary Markdown documents. It renders user and assistant messages as
+Markdown, remains responsive with very long conversations, and can follow an
+active session as new messages arrive.
 
 The application has four small pieces:
 
@@ -10,6 +11,9 @@ The application has four small pieces:
 - SQLite stores the rebuildable message index.
 - React renders only the part of a conversation currently being viewed.
 - Caddy serves the frontend and proxies API requests.
+
+Markdown documents are read directly from a separate directory. They are not
+copied into SQLite or converted into fake conversations.
 
 Transcript files are mounted read-only and remain the source of truth. The
 viewer never modifies them. Conversation archives created explicitly from the
@@ -78,6 +82,7 @@ directory itself, so configure `.env` with its absolute path:
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
 VIEWER_ARCHIVES_ROOT=./archives
+VIEWER_DOCUMENTS_ROOT=./documents
 VIEWER_PORT=8080
 ```
 
@@ -113,6 +118,7 @@ Set the common parent as the mount:
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
 VIEWER_ARCHIVES_ROOT=./archives
+VIEWER_DOCUMENTS_ROOT=./documents
 VIEWER_PORT=8080
 ```
 
@@ -184,7 +190,7 @@ It is only a convenience layer; the equivalent Docker commands remain valid.
 First-time setup and startup:
 
 ```bash
-just setup       # Create missing config, bookmarks/, and the archive directory
+just setup       # Create missing config and local data directories
 # Edit .env and config/sources.toml now.
 just up          # Build and start
 ```
@@ -249,6 +255,47 @@ docker compose exec api viewer discover
 docker compose exec api viewer discover personal
 docker compose exec api viewer sync personal 019fdbaf
 docker compose exec api viewer sync claude 087e7ac1
+```
+
+## Read Markdown documents
+
+Compose mounts the host directory selected by `VIEWER_DOCUMENTS_ROOT` read-only
+at `/documents`. The default is the gitignored `documents/` directory beside
+this README:
+
+```dotenv
+VIEWER_DOCUMENTS_ROOT=./documents
+```
+
+Copy any number of UTF-8 `.md` files into it. Nested directories are supported:
+
+```text
+documents/
+├── architecture.md
+├── notes/
+│   └── ollama.md
+└── reviews/
+    ├── backend.md
+    └── frontend.md
+```
+
+Open **Documents** in the sidebar and press the refresh icon after adding,
+renaming, or removing files. Each file is a separate document. Its first H1 is
+used as its display title, with the filename as the fallback.
+
+Opening a document reads that file directly from disk and renders the complete
+document as one continuous page. The browser caches the loaded Markdown for the
+current SPA session; **Reload** explicitly reads the file again. Documents use
+the same headings, outline, Mermaid diagrams, syntax highlighting, raw HTML,
+and copy buttons as conversation messages.
+
+Documents are never written to SQLite and require no discovery, indexing, or
+synchronization command. The API only lists filesystem metadata and returns the
+selected file. To use a different directory, set an absolute host path in
+`.env`, then recreate the API container:
+
+```dotenv
+VIEWER_DOCUMENTS_ROOT=/Users/me/Documents/markdown-library
 ```
 
 ## Archive a conversation
@@ -367,7 +414,11 @@ exported as durable snapshots from the viewer.
 - Rendered messages substantially taller than the viewport have a compact
   **Top of message** action at their bottom.
 - The session ID, complete message Markdown, and every fenced code block have
-  dedicated copy buttons.
+dedicated copy buttons.
+
+In document mode, **Beginning**, **End**, **Outline**, **Copy**, and **Reload**
+operate on the complete Markdown file. **Top of document** is available at the
+bottom of the page.
 
 Press **Ctrl+F** or **Cmd+F** to search the complete indexed conversation—not
 just the messages currently rendered on screen. Enter and Shift+Enter move
@@ -380,10 +431,10 @@ modifies SQLite or transcript files.
 
 ## Markdown rendering
 
-User and assistant messages share the same GitHub-flavored Markdown pipeline.
-The viewer supports headings, lists, tables, task lists, blockquotes, links,
-inline code, fenced code, and raw HTML. Recognized fenced-code languages receive
-syntax highlighting.
+User messages, assistant messages, and standalone documents share the same
+GitHub-flavored Markdown pipeline. The viewer supports headings, lists, tables,
+task lists, blockquotes, links, inline code, fenced code, and raw HTML.
+Recognized fenced-code languages receive syntax highlighting.
 
 Headings receive message-scoped anchors, with a small `#` link visible only on
 hover. Ordinary same-document Markdown links are resolved inside their own
@@ -457,6 +508,10 @@ Conversation archives live in the writable directory selected by
 intended as durable, vendor-neutral conversation copies. Back that directory up
 if the exports matter to you.
 
+Standalone Markdown files remain solely in the read-only directory selected by
+`VIEWER_DOCUMENTS_ROOT`. Only their contents currently displayed by the SPA are
+kept in browser memory; neither their metadata nor content is stored in SQLite.
+
 ## Useful operational commands
 
 Check service status and health:
@@ -510,6 +565,12 @@ container. The archive adapter should instead point to `/archives`.
 Select it and press **Index session**. The catalog and message index are
 separate on purpose. Also remember that tool-only and metadata records are not
 displayed as messages.
+
+### Markdown documents do not appear
+
+Switch to **Documents** and press its refresh icon. Check the resolved read-only
+mount with `docker compose config`; `.md` files must be beneath the host path in
+`VIEWER_DOCUMENTS_ROOT`. Files must be UTF-8 to open successfully.
 
 ### Compare a JSONL transcript with SQLite
 
@@ -570,6 +631,8 @@ The React frontend uses these endpoints:
 
 ```text
 GET  /api/health
+GET  /api/documents
+GET  /api/documents/{document_id}
 GET  /api/sessions
 POST /api/sessions/discover
 GET  /api/sessions/{source_id}/{session_id}

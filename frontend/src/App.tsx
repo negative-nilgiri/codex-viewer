@@ -4,15 +4,18 @@ import {
   archiveSession,
   discoverSessions,
   exportBookmarkBackup,
+  fetchDocuments,
   fetchMessages,
   fetchSessions,
   restoreBookmarkBackup,
   searchMessages,
   syncSession,
   type Message,
+  type DocumentSummary,
   type SessionSummary,
 } from './api'
 import { CopyButton } from './components/CopyButton'
+import { DocumentViewer } from './DocumentViewer'
 import { MessageCard } from './MessageCard'
 import './App.css'
 
@@ -37,6 +40,13 @@ function displayClockTime(value: string | null) {
   return Number.isNaN(parsed.valueOf())
     ? value
     : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function displayDocumentModified(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.valueOf())
+    ? value
+    : parsed.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function activityDay(value: string | null) {
@@ -916,9 +926,19 @@ function Transcript({
 }
 
 function App() {
+  const [viewMode, setViewMode] = useState<'sessions' | 'documents'>(() =>
+    localStorage.getItem('codex-sessions-viewer:view-mode') === 'documents'
+      ? 'documents'
+      : 'sessions',
+  )
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [selected, setSelected] = useState<SessionSummary | null>(null)
-  const [loadingSessions, setLoadingSessions] = useState(true)
+  const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [selectedDocument, setSelectedDocument] = useState<DocumentSummary | null>(null)
+  const [documentsLoaded, setDocumentsLoaded] = useState(false)
+  const [loadingDocuments, setLoadingDocuments] = useState(viewMode === 'documents')
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [loadingSessions, setLoadingSessions] = useState(viewMode === 'sessions')
   const [discovering, setDiscovering] = useState(false)
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -929,6 +949,7 @@ function App() {
   async function refreshSessions() {
     const loaded = await fetchSessions()
     setSessions(loaded)
+    setSessionsLoaded(true)
     setSelected((current) => {
       if (!current) return loaded[0] ?? null
       return (
@@ -940,6 +961,7 @@ function App() {
   }
 
   useEffect(() => {
+    if (viewMode !== 'sessions' || sessionsLoaded) return
     let active = true
     discoverSessions()
       .catch((caught: unknown) => {
@@ -950,6 +972,7 @@ function App() {
         if (!active) return
         setSessions(loaded)
         setSelected(loaded[0] ?? null)
+        setSessionsLoaded(true)
       })
       .catch((caught: unknown) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught))
@@ -960,7 +983,30 @@ function App() {
     return () => {
       active = false
     }
-  }, [])
+  }, [sessionsLoaded, viewMode])
+
+  useEffect(() => {
+    localStorage.setItem('codex-sessions-viewer:view-mode', viewMode)
+    if (viewMode !== 'documents' || documentsLoaded) return
+    let active = true
+    fetchDocuments()
+      .then((loaded) => {
+        if (!active) return
+        setDocuments(loaded)
+        setSelectedDocument(loaded[0] ?? null)
+        setDocumentsLoaded(true)
+        setError(null)
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
+      .finally(() => {
+        if (active) setLoadingDocuments(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [documentsLoaded, viewMode])
 
   useEffect(() => {
     if (!catalogNotice) return
@@ -993,6 +1039,41 @@ function App() {
     }
   }
 
+  async function refreshDocuments() {
+    setLoadingDocuments(true)
+    setCatalogNotice(null)
+    setError(null)
+    try {
+      const loaded = await fetchDocuments()
+      setDocuments(loaded)
+      setSelectedDocument((current) =>
+        loaded.find((document) => document.id === current?.id) ?? loaded[0] ?? null,
+      )
+      setDocumentsLoaded(true)
+      setCatalogNotice(
+        `Found ${loaded.length} Markdown document${loaded.length === 1 ? '' : 's'}.`,
+      )
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setLoadingDocuments(false)
+    }
+  }
+
+  function showDocuments() {
+    if (!documentsLoaded) setLoadingDocuments(true)
+    setCatalogNotice(null)
+    setError(null)
+    setViewMode('documents')
+  }
+
+  function showSessions() {
+    if (!sessionsLoaded) setLoadingSessions(true)
+    setCatalogNotice(null)
+    setError(null)
+    setViewMode('sessions')
+  }
+
   const sessionGroups = groupSessions(sessions)
 
   return (
@@ -1000,21 +1081,39 @@ function App() {
       <aside className={`session-sidebar${sidebarCollapsed ? ' session-sidebar--collapsed' : ''}`}>
         <div className="sidebar-heading">
           {!sidebarCollapsed && (
-            <div>
-              <span className="eyebrow">Recently active</span>
-              <h1>Sessions</h1>
+            <div aria-label="Content type" className="sidebar-mode-switch" role="tablist">
+              <button
+                aria-selected={viewMode === 'sessions'}
+                className={viewMode === 'sessions' ? 'sidebar-mode--active' : ''}
+                onClick={showSessions}
+                role="tab"
+                type="button"
+              >
+                Sessions
+              </button>
+              <button
+                aria-selected={viewMode === 'documents'}
+                className={viewMode === 'documents' ? 'sidebar-mode--active' : ''}
+                onClick={showDocuments}
+                role="tab"
+                type="button"
+              >
+                Documents
+              </button>
             </div>
           )}
           <div className="sidebar-heading-actions">
             {!sidebarCollapsed && (
               <button
-                aria-label="Rescan sessions"
-                disabled={discovering}
-                onClick={rescanSessions}
-                title="Rescan sessions"
+                aria-label={viewMode === 'sessions' ? 'Rescan sessions' : 'Refresh documents'}
+                disabled={viewMode === 'sessions' ? discovering : loadingDocuments}
+                onClick={() =>
+                  void (viewMode === 'sessions' ? rescanSessions() : refreshDocuments())
+                }
+                title={viewMode === 'sessions' ? 'Rescan sessions' : 'Refresh documents'}
                 type="button"
               >
-                {discovering ? '…' : '↻'}
+                {(viewMode === 'sessions' ? discovering : loadingDocuments) ? '…' : '↻'}
               </button>
             )}
             <button
@@ -1032,7 +1131,33 @@ function App() {
           <>
             {error && <div className="status status--error">{error}</div>}
             {catalogNotice && <div className="status">{catalogNotice}</div>}
-            {sessions.length === 0 && loadingSessions ? (
+            {viewMode === 'documents' ? (
+              documents.length === 0 && loadingDocuments ? (
+                <div className="empty-sidebar">Reading the document directory…</div>
+              ) : documents.length === 0 ? (
+                <div className="empty-sidebar">
+                  <p>No Markdown documents found.</p>
+                  <code>Copy .md files into the configured documents directory.</code>
+                </div>
+              ) : (
+                <nav aria-label="Markdown documents">
+                  {documents.map((document) => (
+                    <button
+                      className={`session-link${selectedDocument?.id === document.id ? ' session-link--active' : ''}`}
+                      key={document.id}
+                      onClick={() => setSelectedDocument(document)}
+                      type="button"
+                    >
+                      <strong>{document.title}</strong>
+                      <div className="session-meta">
+                        <span title={document.path}>{document.path}</span>
+                        <time>{displayDocumentModified(document.modified_at)}</time>
+                      </div>
+                    </button>
+                  ))}
+                </nav>
+              )
+            ) : sessions.length === 0 && loadingSessions ? (
               <div className="empty-sidebar">Scanning mounted sessions…</div>
             ) : sessions.length === 0 ? (
               <div className="empty-sidebar">
@@ -1077,7 +1202,16 @@ function App() {
       </aside>
 
       <section className="transcript">
-        {selected ? (
+        {viewMode === 'documents' ? (
+          selectedDocument ? (
+            <DocumentViewer document={selectedDocument} key={selectedDocument.id} />
+          ) : (
+            <div className="empty-transcript">
+              <h2>Add a Markdown document to begin</h2>
+              <p>Documents are read directly from the configured host directory.</p>
+            </div>
+          )
+        ) : selected ? (
           <Transcript
             key={sessionIdentity(selected)}
             session={selected}

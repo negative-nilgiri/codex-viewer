@@ -16,6 +16,7 @@ Configuration:
 - `VIEWER_SESSION_METADATA_FILE`, default `/config/session_metadata.json`
 - `VIEWER_BOOKMARKS_DIRECTORY`, default `/data/bookmarks`
 - `VIEWER_ARCHIVES_DIRECTORY`, default `/data/archives`
+- `VIEWER_DOCUMENTS_DIRECTORY`, default `/documents` (read directly; not indexed)
 
 Export the currently indexed user/assistant conversation without synchronizing
 the source first:

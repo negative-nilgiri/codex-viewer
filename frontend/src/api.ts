@@ -74,6 +74,16 @@ export type BookmarkBackup = {
   bookmarks: BookmarkBackupItem[]
 }
 
+export type DocumentSummary = {
+  id: string
+  title: string
+  path: string
+  modified_at: string
+  size: number
+}
+
+const documentCache = new Map<string, string>()
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
@@ -96,6 +106,41 @@ function sessionPath(session: SessionSummary) {
 export async function fetchSessions(): Promise<SessionSummary[]> {
   const response = await request<{ items: SessionSummary[] }>('/api/sessions?limit=500')
   return response.items
+}
+
+export async function fetchDocuments(): Promise<DocumentSummary[]> {
+  const response = await request<{ items: DocumentSummary[] }>('/api/documents')
+  return response.items
+}
+
+export async function fetchDocument(
+  document: DocumentSummary,
+  force = false,
+): Promise<string> {
+  const cacheKey = `${document.id}:${document.modified_at}:${document.size}`
+  if (!force) {
+    const cached = documentCache.get(cacheKey)
+    if (cached !== undefined) return cached
+  }
+  const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}`, {
+    cache: force ? 'reload' : 'default',
+  })
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      detail = body.detail ?? detail
+    } catch {
+      // Keep the HTTP status when the response has no JSON error body.
+    }
+    throw new Error(detail)
+  }
+  const markdown = await response.text()
+  for (const key of documentCache.keys()) {
+    if (key.startsWith(`${document.id}:`)) documentCache.delete(key)
+  }
+  documentCache.set(cacheKey, markdown)
+  return markdown
 }
 
 export function discoverSessions(): Promise<DiscoveryResult> {
