@@ -11,3 +11,5 @@ documents/*
 !documents/.gitkeep
 config/session_metadata.json
 config/sources.toml
+metadata/*
+!metadata/.gitkeep

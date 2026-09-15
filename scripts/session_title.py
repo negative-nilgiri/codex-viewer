@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage persistent session titles in config/session_metadata.json."""
+"""Manage persistent session titles in metadata/session_metadata.json."""
 
 from __future__ import annotations
 
@@ -11,9 +11,13 @@ import uuid
 from pathlib import Path
 
 
-DEFAULT_METADATA_FILE = (
-    Path(__file__).resolve().parents[1] / "config" / "session_metadata.json"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+CONFIGURED_METADATA_ROOT = Path(
+    os.environ.get("VIEWER_METADATA_ROOT", REPOSITORY_ROOT / "metadata")
 )
+if not CONFIGURED_METADATA_ROOT.is_absolute():
+    CONFIGURED_METADATA_ROOT = REPOSITORY_ROOT / CONFIGURED_METADATA_ROOT
+DEFAULT_METADATA_FILE = CONFIGURED_METADATA_ROOT / "session_metadata.json"
 
 
 def session_id(value: str) -> str:

@@ -11,8 +11,15 @@ from .config import Settings
 from .database import initialize
 from .discovery import discover_sessions
 from .documents import DocumentError, list_documents, load_document
-from .repository import get_messages, get_session, list_sessions, search_messages
+from .repository import (
+    get_messages,
+    get_session,
+    list_sessions,
+    search_messages,
+    update_session_title,
+)
 from .rollout import RolloutError
+from .session_metadata import SessionMetadataError, save_session_title
 from .sources import SourceConfigurationError, load_sources, select_sources
 from .sync import sync_session
 
@@ -32,6 +39,10 @@ class BookmarkBackup(BookmarkBackupInput):
     session_id: str
     session_title: str
     exported_at: str
+
+
+class SessionTitleInput(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 def create_app(settings: Settings | None = None):
@@ -130,6 +141,31 @@ def create_app(settings: Settings | None = None):
         if result is None:
             raise HTTPException(status_code=404, detail="Session is not indexed")
         return result
+
+    @application.put("/api/sessions/{profile}/{session_id}/title")
+    def set_title(profile: str, session_id: str, payload: SessionTitleInput):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        title = " ".join(payload.title.split())
+        if not title:
+            raise HTTPException(status_code=422, detail="Session title cannot be blank")
+        try:
+            save_session_title(configured.session_metadata_path, session_id, title)
+            update_session_title(configured.database_path, session_id, title)
+        except SessionMetadataError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return get_session(configured.database_path, profile, session_id)
+
+    @application.delete("/api/sessions/{profile}/{session_id}/title")
+    def reset_title(profile: str, session_id: str):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        try:
+            save_session_title(configured.session_metadata_path, session_id, None)
+            update_session_title(configured.database_path, session_id, None)
+        except SessionMetadataError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return get_session(configured.database_path, profile, session_id)
 
     @application.put(
         "/api/sessions/{profile}/{session_id}/bookmarks",

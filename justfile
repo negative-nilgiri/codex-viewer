@@ -17,7 +17,17 @@ setup:
         cp config/sources.example.toml config/sources.toml
         echo "Created config/sources.toml; configure its source paths before starting."
     fi
-    mkdir -p bookmarks "${VIEWER_ARCHIVES_ROOT:-./archives}" "${VIEWER_DOCUMENTS_ROOT:-./documents}"
+    metadata_root="${VIEWER_METADATA_ROOT:-./metadata}"
+    mkdir -p bookmarks "$metadata_root" "${VIEWER_ARCHIVES_ROOT:-./archives}" "${VIEWER_DOCUMENTS_ROOT:-./documents}"
+    if [[ ! -f "$metadata_root/session_metadata.json" ]]; then
+        if [[ -f config/session_metadata.json ]]; then
+            mv config/session_metadata.json "$metadata_root/session_metadata.json"
+            echo "Migrated session titles to $metadata_root/session_metadata.json."
+        else
+            cp config/session_metadata.example.json "$metadata_root/session_metadata.json"
+            echo "Created $metadata_root/session_metadata.json."
+        fi
+    fi
 
 # Build images and start the viewer in the background.
 up: setup

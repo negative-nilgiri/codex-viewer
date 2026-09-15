@@ -9,7 +9,7 @@ services:
     environment:
       VIEWER_DATABASE: /data/viewer.sqlite3
       VIEWER_SOURCES_FILE: /config/sources.toml
-      VIEWER_SESSION_METADATA_FILE: /config/session_metadata.json
+      VIEWER_SESSION_METADATA_FILE: /metadata/session_metadata.json
       VIEWER_BOOKMARKS_DIRECTORY: /bookmarks
       VIEWER_ARCHIVES_DIRECTORY: /archives
       VIEWER_DOCUMENTS_DIRECTORY: /documents
@@ -22,6 +22,9 @@ services:
         source: ./config
         target: /config
         read_only: true
+      - type: bind
+        source: ${VIEWER_METADATA_ROOT:-./metadata}
+        target: /metadata
       - type: volume
         source: viewer-data
         target: /data

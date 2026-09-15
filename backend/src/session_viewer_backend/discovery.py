@@ -1,4 +1,3 @@
-import json
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -8,6 +7,7 @@ from .adapters import get_adapter
 from .database import connect, initialize
 from .formatting import normalized_title
 from .rollout import RolloutError, read_prefix_events
+from .session_metadata import load_session_metadata
 from .sources import SourceDefinition, select_sources
 
 
@@ -37,33 +37,6 @@ class DiscoveryResult:
         result = asdict(self)
         result["sources"] = list(self.sources)
         return result
-
-
-def load_session_metadata(path: Path):
-    try:
-        with path.open() as source:
-            parsed = json.load(source)
-    except FileNotFoundError:
-        return {}
-    except OSError as error:
-        raise ValueError(f"Cannot read session metadata {path}: {error}") from error
-    except json.JSONDecodeError as error:
-        raise ValueError(f"Invalid session metadata {path}: {error}") from error
-    if not isinstance(parsed, dict):
-        raise ValueError(f"{path} must contain an object keyed by session ID")
-
-    titles = {}
-    for session_id, metadata in parsed.items():
-        if not isinstance(session_id, str) or not isinstance(metadata, dict):
-            raise ValueError(
-                f"{path} must map every session ID to a metadata object"
-            )
-        title = metadata.get("title")
-        if title is not None and not isinstance(title, str):
-            raise ValueError(f"Session {session_id!r} has a non-string title")
-        if isinstance(title, str):
-            titles[session_id.lower()] = normalized_title(title, width=200)
-    return titles
 
 
 def inspect_transcript(source: SourceDefinition, path: Path):

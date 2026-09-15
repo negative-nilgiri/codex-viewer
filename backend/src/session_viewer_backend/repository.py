@@ -54,6 +54,17 @@ def get_session(database_path: Path, profile: str, session_id: str):
     return row_dict(row)
 
 
+def update_session_title(database_path: Path, session_id: str, title: str | None):
+    """Apply the UUID-scoped title override to every indexed source copy."""
+    initialize(database_path)
+    with closing(connect(database_path)) as connection:
+        with connection:
+            connection.execute(
+                "UPDATE sessions SET title_override = ? WHERE session_id = ?",
+                (title, session_id),
+            )
+
+
 def get_messages(database_path: Path, profile: str, session_id: str, start: int, limit: int):
     initialize(database_path)
     with closing(connect(database_path)) as connection:

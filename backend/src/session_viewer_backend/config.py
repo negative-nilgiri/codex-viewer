@@ -24,7 +24,7 @@ class Settings:
             session_metadata_path=Path(
                 os.environ.get(
                     "VIEWER_SESSION_METADATA_FILE",
-                    "/config/session_metadata.json",
+                    "/metadata/session_metadata.json",
                 )
             ),
             bookmarks_path=Path(

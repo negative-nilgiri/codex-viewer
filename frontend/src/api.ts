@@ -161,6 +161,21 @@ export function syncSession(session: SessionSummary): Promise<SyncResult> {
   return request<SyncResult>(`${sessionPath(session)}/sync`, { method: 'POST' })
 }
 
+export function updateSessionTitle(
+  session: SessionSummary,
+  title: string,
+): Promise<SessionSummary> {
+  return request<SessionSummary>(`${sessionPath(session)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+}
+
+export function resetSessionTitle(session: SessionSummary): Promise<SessionSummary> {
+  return request<SessionSummary>(`${sessionPath(session)}/title`, { method: 'DELETE' })
+}
+
 export function archiveSession(session: SessionSummary): Promise<ArchiveResult> {
   return request<ArchiveResult>(`${sessionPath(session)}/archive`, { method: 'POST' })
 }

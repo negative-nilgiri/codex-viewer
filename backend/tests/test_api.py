@@ -110,6 +110,30 @@ def test_search_finds_message_indexes_case_insensitively(tmp_path):
         }
 
 
+def test_session_title_can_be_edited_and_reset_without_rescanning(tmp_path):
+    with make_client(tmp_path) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/title"
+        updated = client.put(path, json={"title": "  A clearer   session title  "})
+
+        assert updated.status_code == 200
+        assert updated.json()["title"] == "A clearer session title"
+        assert updated.json()["title_overridden"] is True
+        assert client.get("/api/sessions").json()["items"][0]["title"] == (
+            "A clearer session title"
+        )
+        metadata = json.loads((tmp_path / "session_metadata.json").read_text())
+        assert metadata[SESSION_ID]["title"] == "A clearer session title"
+
+        blank = client.put(path, json={"title": "   "})
+        assert blank.status_code == 422
+
+        reset = client.delete(path)
+        assert reset.status_code == 200
+        assert reset.json()["title"] == "Message 0"
+        assert reset.json()["title_overridden"] is False
+        assert json.loads((tmp_path / "session_metadata.json").read_text()) == {}
+
+
 def test_bookmark_backup_export_overwrites_and_restore_reads_snapshot(tmp_path):
     with make_client(tmp_path) as client:
         path = f"/api/sessions/codex_2/{SESSION_ID}/bookmarks"

@@ -82,6 +82,7 @@ directory itself, so configure `.env` with its absolute path:
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
 VIEWER_ARCHIVES_ROOT=./archives
+VIEWER_METADATA_ROOT=./metadata
 VIEWER_DOCUMENTS_ROOT=./documents
 VIEWER_PORT=8080
 ```
@@ -118,6 +119,7 @@ Set the common parent as the mount:
 ```dotenv
 VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
 VIEWER_ARCHIVES_ROOT=./archives
+VIEWER_METADATA_ROOT=./metadata
 VIEWER_DOCUMENTS_ROOT=./documents
 VIEWER_PORT=8080
 ```
@@ -354,8 +356,19 @@ archived copy remain separate because source ID is part of session identity.
 
 ## Give sessions custom titles
 
-The viewer normally derives a title from the transcript. To assign a persistent
-title, copy the complete session ID from the session header and run:
+The viewer normally derives a title from the transcript. Click the pencil next
+to the open session title to replace it directly. **Save** applies the title
+immediately to the header and sidebar, Escape or **Cancel** discards the edit,
+and **Reset** restores the title derived from the transcript.
+
+Titles are stored atomically in the host file
+`metadata/session_metadata.json`. Compose mounts only that metadata directory
+writable at `/metadata`; `config/sources.toml` remains inside the separate
+read-only `/config` mount. Consequently titles survive browser changes,
+container recreation, and rebuilding the SQLite index.
+
+The command-line helper edits the same file. Copy the complete session ID from
+the session header and run:
 
 ```bash
 ./scripts/session_title.py set \
@@ -363,7 +376,8 @@ title, copy the complete session ID from the session header and run:
   "Codex frontend UI"
 ```
 
-Click **Rescan** in the viewer to display the new title.
+Click **Rescan** in the viewer after a command-line change. Browser edits update
+the current catalog immediately and do not require a rescan.
 
 List all custom titles:
 
@@ -378,7 +392,7 @@ Remove a custom title and return to the transcript-derived title:
   019fdbaf-c2ea-7e50-ae8f-8fa79e733904
 ```
 
-The script updates `config/session_metadata.json` atomically. A different
+The script updates `metadata/session_metadata.json` atomically. A different
 metadata file can be selected by placing `--file PATH` before the command.
 
 The underlying format is intentionally simple:
@@ -391,9 +405,11 @@ The underlying format is intentionally simple:
 }
 ```
 
-Session titles are deployment configuration. Live message bookmarks and their
-labels are stored in the current browser's local storage. They can also be
-exported as durable snapshots from the viewer.
+The JSON format remains deliberately simple. A title is scoped by session UUID,
+so an original and archived copy with the same UUID receive the same custom
+title. Live message bookmarks and their labels are stored in the current
+browser's local storage. They can also be exported as durable snapshots from
+the viewer.
 
 ## Reading controls
 
@@ -511,6 +527,11 @@ if the exports matter to you.
 Standalone Markdown files remain solely in the read-only directory selected by
 `VIEWER_DOCUMENTS_ROOT`. Only their contents currently displayed by the SPA are
 kept in browser memory; neither their metadata nor content is stored in SQLite.
+
+Session title metadata lives in the writable host directory selected by
+`VIEWER_METADATA_ROOT` (`./metadata` by default). `just setup` moves an existing
+`config/session_metadata.json` into this directory once, preserving titles from
+older installations, and creates an empty metadata file for new installations.
 
 ## Useful operational commands
 
@@ -640,4 +661,6 @@ GET  /api/sessions/{source_id}/{session_id}/messages?start=0&limit=30
 GET  /api/sessions/{source_id}/{session_id}/search?q=substring
 POST /api/sessions/{source_id}/{session_id}/sync
 POST /api/sessions/{source_id}/{session_id}/archive
+PUT  /api/sessions/{source_id}/{session_id}/title
+DELETE /api/sessions/{source_id}/{session_id}/title
 ```

@@ -13,7 +13,7 @@ Configuration:
 
 - `VIEWER_DATABASE`, default `/data/viewer.sqlite3`
 - `VIEWER_SOURCES_FILE`, default `/config/sources.toml`
-- `VIEWER_SESSION_METADATA_FILE`, default `/config/session_metadata.json`
+- `VIEWER_SESSION_METADATA_FILE`, default `/metadata/session_metadata.json`
 - `VIEWER_BOOKMARKS_DIRECTORY`, default `/data/bookmarks`
 - `VIEWER_ARCHIVES_DIRECTORY`, default `/data/archives`
 - `VIEWER_DOCUMENTS_DIRECTORY`, default `/documents` (read directly; not indexed)

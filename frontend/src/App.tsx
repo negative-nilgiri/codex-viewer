@@ -7,9 +7,11 @@ import {
   fetchDocuments,
   fetchMessages,
   fetchSessions,
+  resetSessionTitle,
   restoreBookmarkBackup,
   searchMessages,
   syncSession,
+  updateSessionTitle,
   type Message,
   type DocumentSummary,
   type SessionSummary,
@@ -181,6 +183,9 @@ function Transcript({
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: -1 })
   const [syncing, setSyncing] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(session.title)
+  const [savingTitle, setSavingTitle] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [newMessages, setNewMessages] = useState(0)
@@ -644,6 +649,46 @@ function Transcript({
     setSearchError(null)
   }
 
+  async function saveTitle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = titleDraft.trim()
+    if (!title || savingTitle) return
+    setSavingTitle(true)
+    setError(null)
+    try {
+      await updateSessionTitle(session, title)
+      await onSynced()
+      setEditingTitle(false)
+      setNotice('Session title updated.')
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  async function resetTitle() {
+    if (savingTitle) return
+    setSavingTitle(true)
+    setError(null)
+    try {
+      const restored = await resetSessionTitle(session)
+      await onSynced()
+      setTitleDraft(restored.title)
+      setEditingTitle(false)
+      setNotice('Session title reset to the transcript title.')
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  function cancelTitleEdit() {
+    setTitleDraft(session.title)
+    setEditingTitle(false)
+  }
+
   const visibleLabel =
     visibleRange.end >= 0 && total
       ? `${visibleRange.start + 1}–${Math.min(visibleRange.end + 1, total)} of ${total}`
@@ -654,7 +699,52 @@ function Transcript({
       <header className="session-header">
         <div className="session-heading">
           <span className="eyebrow">{session.profile}</span>
-          <h2>{session.title}</h2>
+          {editingTitle ? (
+            <form className="session-title-editor" onSubmit={saveTitle}>
+              <input
+                aria-label="Session title"
+                autoFocus
+                maxLength={200}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelTitleEdit()
+                  }
+                }}
+                required
+                type="text"
+                value={titleDraft}
+              />
+              <button disabled={savingTitle || !titleDraft.trim()} type="submit">
+                {savingTitle ? 'Saving…' : 'Save'}
+              </button>
+              <button disabled={savingTitle} onClick={cancelTitleEdit} type="button">
+                Cancel
+              </button>
+              {session.title_overridden && (
+                <button disabled={savingTitle} onClick={() => void resetTitle()} type="button">
+                  Reset
+                </button>
+              )}
+            </form>
+          ) : (
+            <div className="session-title-display">
+              <h2>{session.title}</h2>
+              <button
+                aria-label="Edit session title"
+                className="session-title-edit"
+                onClick={() => {
+                  setTitleDraft(session.title)
+                  setEditingTitle(true)
+                }}
+                title="Edit session title"
+                type="button"
+              >
+                ✎
+              </button>
+            </div>
+          )}
           <p>
             <span className="session-id">
               <code>{session.session_id}</code>
