@@ -752,6 +752,18 @@ button:disabled {
   box-shadow: 0 0.8rem 2rem rgb(0 0 0 / 24%);
 }
 
+.annotation-trigger {
+  position: fixed;
+  z-index: 99;
+  padding: 0.28rem 0.48rem;
+  border-color: color-mix(in srgb, #d3a900 65%, var(--border-strong));
+  color: var(--heading);
+  background: color-mix(in srgb, #f4c542 18%, var(--surface));
+  box-shadow: 0 0.35rem 0.9rem rgb(0 0 0 / 16%);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
 .annotation-editor-heading {
   display: flex;
   align-items: baseline;

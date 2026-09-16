@@ -37,7 +37,6 @@ type HighlightConstructor = new (...ranges: Range[]) => unknown
 
 const annotationRanges = new Map<string, Range[]>()
 const focusedRanges = new Map<string, Range[]>()
-const MOUSE_SELECTION_DELAY_MS = 300
 
 function registry() {
   return (CSS as unknown as { highlights?: HighlightRegistry }).highlights
@@ -260,8 +259,8 @@ function captureSelection(root: HTMLElement, markdown: string): PendingSelection
     selected_text: selectedText,
     prefix,
     suffix,
-    left: Math.max(12, Math.min(rectangle.left, window.innerWidth - 372)),
-    top: Math.max(12, Math.min(rectangle.bottom + 8, window.innerHeight - 240)),
+    left: rectangle.left,
+    top: rectangle.bottom + 8,
   }
 }
 
@@ -293,8 +292,9 @@ export function AnnotationSurface({
   owner: string
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const selectionTimer = useRef<number | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [pending, setPending] = useState<PendingSelection | null>(null)
+  const [editing, setEditing] = useState(false)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -352,42 +352,51 @@ export function AnnotationSurface({
     }
   }, [annotations, contentKey, focusAnnotationId, onFocused, owner])
 
-  useEffect(
-    () => () => {
-      if (selectionTimer.current !== null) {
-        window.clearTimeout(selectionTimer.current)
-      }
-      clearOwnerRanges(owner)
-    },
-    [owner],
-  )
+  useEffect(() => () => clearOwnerRanges(owner), [owner])
+
+  useEffect(() => {
+    if (!pending || editing) return
+
+    function dismissOnPointer(event: PointerEvent) {
+      if (triggerRef.current?.contains(event.target as Node)) return
+      setPending(null)
+    }
+
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setPending(null)
+    }
+
+    function dismissOnScroll() {
+      setPending(null)
+    }
+
+    document.addEventListener('pointerdown', dismissOnPointer, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('scroll', dismissOnScroll, true)
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnPointer, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('scroll', dismissOnScroll, true)
+    }
+  }, [editing, pending])
 
   function inspectSelection() {
     const root = rootRef.current
     if (!root) return
     const captured = captureSelection(root, contentKey)
-    if (!captured) return
+    if (!captured) {
+      if (!editing) setPending(null)
+      return
+    }
     setPending(captured)
+    setEditing(false)
     setNote('')
     setError(null)
   }
 
-  function cancelScheduledSelection() {
-    if (selectionTimer.current === null) return
-    window.clearTimeout(selectionTimer.current)
-    selectionTimer.current = null
-  }
-
-  function scheduleSelectionInspection() {
-    cancelScheduledSelection()
-    selectionTimer.current = window.setTimeout(() => {
-      selectionTimer.current = null
-      inspectSelection()
-    }, MOUSE_SELECTION_DELAY_MS)
-  }
-
   function closeEditor() {
     setPending(null)
+    setEditing(false)
     setNote('')
     setError(null)
     window.getSelection()?.removeAllRanges()
@@ -427,19 +436,38 @@ export function AnnotationSurface({
       <div
         className="rendered-markdown"
         onKeyUp={inspectSelection}
-        onMouseDown={cancelScheduledSelection}
-        onMouseUp={scheduleSelectionInspection}
+        onMouseUp={inspectSelection}
         ref={rootRef}
       >
         {children}
       </div>
-      {pending &&
+      {pending && !editing &&
+        createPortal(
+          <button
+            className="annotation-trigger"
+            onClick={() => setEditing(true)}
+            onMouseDown={(event) => event.preventDefault()}
+            ref={triggerRef}
+            style={{
+              left: Math.max(8, Math.min(pending.left, window.innerWidth - 100)),
+              top: Math.max(8, Math.min(pending.top, window.innerHeight - 42)),
+            }}
+            type="button"
+          >
+            Annotate
+          </button>,
+          document.body,
+        )}
+      {pending && editing &&
         createPortal(
           <form
             className="annotation-editor"
             onKeyDown={editorKeyDown}
             onSubmit={save}
-            style={{ left: pending.left, top: pending.top }}
+            style={{
+              left: Math.max(12, Math.min(pending.left, window.innerWidth - 372)),
+              top: Math.max(12, Math.min(pending.top, window.innerHeight - 240)),
+            }}
           >
             <div className="annotation-editor-heading">
               <strong>Annotate selection</strong>

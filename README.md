@@ -419,9 +419,11 @@ the viewer.
 - The star in a message header adds or removes a bookmark.
 - **Bookmarks** opens the saved-message list. Bookmark labels are generated
   from message text and can be edited in place.
-- Select rendered text in a message or document to open the annotation editor.
-  The saved annotation records the exact quotation, surrounding text, and its
-  Markdown source lines without changing the JSONL or `.md` file.
+- Select rendered text in a message or document to reveal a small **Annotate**
+  action, then click it to open the note editor. Casual selections are harmless:
+  the action disappears on outside click, Escape, or scrolling. The saved
+  annotation records the exact quotation, surrounding text, and its Markdown
+  source lines without changing the JSONL or `.md` file.
 - **Annotations** lists notes for the current session or document. Selecting a
   note loads and expands its message when necessary, then jumps to and briefly
   emphasizes the annotated passage. Notes can be edited or deleted in place.
