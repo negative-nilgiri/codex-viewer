@@ -198,5 +198,5 @@ def test_initialize_migrates_a_version_one_catalog(tmp_path):
         columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(sessions)")
         }
-    assert version == 3
+    assert version == 4
     assert {"source_present", "last_discovered_at", "title_override"} <= columns

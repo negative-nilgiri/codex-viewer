@@ -82,6 +82,34 @@ export type DocumentSummary = {
   size: number
 }
 
+export type Annotation = {
+  id: number
+  target_type: 'message' | 'document'
+  profile: string | null
+  session_id: string | null
+  message_index: number | null
+  document_id: string | null
+  document_path: string | null
+  start_line: number
+  end_line: number
+  selected_text: string
+  prefix: string
+  suffix: string
+  content_hash: string
+  note: string
+  created_at: string
+  updated_at: string
+}
+
+export type AnnotationDraft = {
+  start_line: number
+  end_line: number
+  selected_text: string
+  prefix: string
+  suffix: string
+  note: string
+}
+
 const documentCache = new Map<string, string>()
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -204,4 +232,70 @@ export function restoreBookmarkBackup(
   session: SessionSummary,
 ): Promise<BookmarkBackup> {
   return request<BookmarkBackup>(`${sessionPath(session)}/bookmarks`)
+}
+
+export async function fetchSessionAnnotations(
+  session: SessionSummary,
+): Promise<Annotation[]> {
+  const response = await request<{ items: Annotation[] }>(
+    `${sessionPath(session)}/annotations`,
+  )
+  return response.items
+}
+
+export function createSessionAnnotation(
+  session: SessionSummary,
+  messageIndex: number,
+  draft: AnnotationDraft,
+): Promise<Annotation> {
+  return request<Annotation>(`${sessionPath(session)}/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...draft, message_index: messageIndex }),
+  })
+}
+
+export async function fetchDocumentAnnotations(
+  document: DocumentSummary,
+): Promise<Annotation[]> {
+  const response = await request<{ items: Annotation[] }>(
+    `/api/documents/${encodeURIComponent(document.id)}/annotations`,
+  )
+  return response.items
+}
+
+export function createDocumentAnnotation(
+  document: DocumentSummary,
+  draft: AnnotationDraft,
+): Promise<Annotation> {
+  return request<Annotation>(
+    `/api/documents/${encodeURIComponent(document.id)}/annotations`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    },
+  )
+}
+
+export function updateAnnotation(id: number, note: string): Promise<Annotation> {
+  return request<Annotation>(`/api/annotations/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  })
+}
+
+export async function deleteAnnotation(id: number): Promise<void> {
+  const response = await fetch(`/api/annotations/${id}`, { method: 'DELETE' })
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      detail = body.detail ?? detail
+    } catch {
+      // Keep the HTTP status when the response has no JSON error body.
+    }
+    throw new Error(detail)
+  }
 }

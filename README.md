@@ -8,7 +8,7 @@ active session as new messages arrive.
 The application has four small pieces:
 
 - FastAPI discovers transcripts and incrementally indexes visible messages.
-- SQLite stores the rebuildable message index.
+- SQLite stores the rebuildable message index and durable annotations.
 - React renders only the part of a conversation currently being viewed.
 - Caddy serves the frontend and proxies API requests.
 
@@ -419,6 +419,12 @@ the viewer.
 - The star in a message header adds or removes a bookmark.
 - **Bookmarks** opens the saved-message list. Bookmark labels are generated
   from message text and can be edited in place.
+- Select rendered text in a message or document to open the annotation editor.
+  The saved annotation records the exact quotation, surrounding text, and its
+  Markdown source lines without changing the JSONL or `.md` file.
+- **Annotations** lists notes for the current session or document. Selecting a
+  note loads and expands its message when necessary, then jumps to and briefly
+  emphasizes the annotated passage. Notes can be edited or deleted in place.
 - **Export backup** atomically overwrites `bookmarks/<session-id>.json` with the
   current list. **Restore backup** confirms and then replaces the browser list
   directly; it does not scan or synchronize the transcript.
@@ -442,8 +448,9 @@ between matches, and Escape closes search.
 
 Fold state, live bookmarks, bookmark labels, sidebar state, and Watch
 preferences are stored in browser local storage. Bookmark backups are readable,
-versioned JSON files in the gitignored `bookmarks/` directory. Neither mechanism
-modifies SQLite or transcript files.
+versioned JSON files in the gitignored `bookmarks/` directory. Annotations are
+stored in SQLite so they are shared across browsers and survive session resyncs.
+None of these mechanisms modifies transcript or Markdown source files.
 
 ## Markdown rendering
 
@@ -469,6 +476,14 @@ The viewer's **Outline** control already provides a table of contents. These
 anchors navigate the currently rendered message; durable links that reopen a
 session at a specific heading are not yet part of the URL scheme.
 
+The renderer also preserves Markdown AST line positions for annotations. For
+ordinary prose it narrows a selection to the exact source lines when the
+rendered quotation can be found in the Markdown; complex formatted selections
+fall back to their containing Markdown blocks. The exact quotation and nearby
+text are retained as additional anchors. If a standalone document changes, the
+viewer first searches for that quotation and falls back to the recorded source
+line when it can no longer be found.
+
 A fenced block tagged `mermaid` is rendered as a Mermaid diagram:
 
 ````markdown
@@ -480,7 +495,8 @@ flowchart LR
 
 Use **Raw** in a diagram toolbar to switch between the rendered diagram and its
 original Mermaid source. Invalid diagrams display their error and source instead
-of disappearing.
+of disappearing. Generated SVG labels are not annotatable, but text selected in
+the diagram's **Raw** source is.
 
 When a diagram declares styled classes with `classDef`, the viewer adds a
 compact legend beneath the rendered SVG. The class name is used as its label and
@@ -516,8 +532,10 @@ reasoning, tool calls, tool results, attachments, and other non-conversation
 records are excluded.
 
 SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`.
-It is an index, not the source of truth, and can be rebuilt from the JSONL
-transcripts.
+The session catalog and messages inside it are rebuildable indexes, but saved
+annotations are user data and cannot be reconstructed from the JSONL
+transcripts. Normal container rebuilds preserve the volume. Back it up before
+deliberately deleting Docker volumes if annotations matter to you.
 
 Conversation archives live in the writable directory selected by
 `VIEWER_ARCHIVES_ROOT` (`./archives` by default). Unlike SQLite, these are
@@ -560,7 +578,8 @@ Stop the application without deleting the SQLite index:
 docker compose down
 ```
 
-Delete and rebuild the index only when intentionally starting over:
+Delete and rebuild all SQLite data only when intentionally starting over. This
+also permanently deletes saved annotations:
 
 ```bash
 docker compose down --volumes
@@ -654,13 +673,19 @@ The React frontend uses these endpoints:
 GET  /api/health
 GET  /api/documents
 GET  /api/documents/{document_id}
+GET  /api/documents/{document_id}/annotations
+POST /api/documents/{document_id}/annotations
 GET  /api/sessions
 POST /api/sessions/discover
 GET  /api/sessions/{source_id}/{session_id}
 GET  /api/sessions/{source_id}/{session_id}/messages?start=0&limit=30
 GET  /api/sessions/{source_id}/{session_id}/search?q=substring
+GET  /api/sessions/{source_id}/{session_id}/annotations
+POST /api/sessions/{source_id}/{session_id}/annotations
 POST /api/sessions/{source_id}/{session_id}/sync
 POST /api/sessions/{source_id}/{session_id}/archive
 PUT  /api/sessions/{source_id}/{session_id}/title
 DELETE /api/sessions/{source_id}/{session_id}/title
+PATCH /api/annotations/{annotation_id}
+DELETE /api/annotations/{annotation_id}
 ```

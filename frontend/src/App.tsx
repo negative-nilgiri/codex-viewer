@@ -2,20 +2,27 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   archiveSession,
+  createSessionAnnotation,
+  deleteAnnotation,
   discoverSessions,
   exportBookmarkBackup,
   fetchDocuments,
   fetchMessages,
+  fetchSessionAnnotations,
   fetchSessions,
   resetSessionTitle,
   restoreBookmarkBackup,
   searchMessages,
   syncSession,
+  updateAnnotation,
   updateSessionTitle,
-  type Message,
+  type Annotation,
+  type AnnotationDraft,
   type DocumentSummary,
+  type Message,
   type SessionSummary,
 } from './api'
+import { AnnotationsMenu } from './components/AnnotationsMenu'
 import { CopyButton } from './components/CopyButton'
 import { DocumentViewer } from './DocumentViewer'
 import { MessageCard } from './MessageCard'
@@ -200,6 +207,8 @@ function Transcript({
   const [directJumpTarget, setDirectJumpTarget] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(session))
   const [bookmarkOperation, setBookmarkOperation] = useState<'export' | 'restore' | null>(null)
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [focusAnnotationId, setFocusAnnotationId] = useState<number | null>(null)
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
     () => localStorage.getItem(watchStorageKey(session)) === 'true',
@@ -214,6 +223,20 @@ function Transcript({
       activeRequests.clear()
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    fetchSessionAnnotations(session)
+      .then((loaded) => {
+        if (active) setAnnotations(loaded)
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
+    return () => {
+      active = false
+    }
+  }, [session])
 
   useEffect(() => {
     if (!notice) return
@@ -532,6 +555,57 @@ function Transcript({
     setDirectJumpTarget(index)
     loadBlock(blockStartFor(index))
   }
+
+  function expandMessage(messageIndex: number) {
+    setFoldState((current) => {
+      const collapsed = current.defaultCollapsed !== current.exceptions.has(messageIndex)
+      if (!collapsed) return current
+      const exceptions = new Set(current.exceptions)
+      if (current.defaultCollapsed) exceptions.add(messageIndex)
+      else exceptions.delete(messageIndex)
+      return { ...current, exceptions }
+    })
+  }
+
+  function revealAnnotation(annotation: Annotation) {
+    if (annotation.message_index === null) return
+    expandMessage(annotation.message_index)
+    setFocusAnnotationId(annotation.id)
+    jumpToMessage(annotation.message_index)
+  }
+
+  const annotateMessage = useCallback(
+    async (message: Message, draft: AnnotationDraft) => {
+      const created = await createSessionAnnotation(
+        session,
+        message.message_index,
+        draft,
+      )
+      setAnnotations((current) =>
+        [...current, created].sort(
+          (left, right) =>
+            (left.message_index ?? 0) - (right.message_index ?? 0) ||
+            left.start_line - right.start_line,
+        ),
+      )
+    },
+    [session],
+  )
+
+  async function editAnnotation(annotation: Annotation, note: string) {
+    const updated = await updateAnnotation(annotation.id, note)
+    setAnnotations((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    )
+  }
+
+  async function removeAnnotation(annotation: Annotation) {
+    await deleteAnnotation(annotation.id)
+    setAnnotations((current) => current.filter((item) => item.id !== annotation.id))
+    if (focusAnnotationId === annotation.id) setFocusAnnotationId(null)
+  }
+
+  const annotationFocused = useCallback(() => setFocusAnnotationId(null), [])
 
   function submitGoToMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -900,6 +974,12 @@ function Transcript({
                 </div>
               </div>
             </details>
+            <AnnotationsMenu
+              annotations={annotations}
+              onDelete={removeAnnotation}
+              onNavigate={revealAnnotation}
+              onUpdate={editAnnotation}
+            />
             <button
               onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
               type="button"
@@ -982,11 +1062,26 @@ function Transcript({
               return (
                 <div className={`message-slot${searchTarget === message.message_index ? ' message-slot--search-target' : ''}`}>
                   <MessageCard
+                    annotations={annotations.filter(
+                      (annotation) =>
+                        annotation.message_index === message.message_index,
+                    )}
                     bookmarked={bookmarks.some(
                       (bookmark) => bookmark.messageIndex === message.message_index,
                     )}
                     collapsed={collapsed}
+                    focusAnnotationId={
+                      annotations.some(
+                        (annotation) =>
+                          annotation.id === focusAnnotationId &&
+                          annotation.message_index === message.message_index,
+                      )
+                        ? focusAnnotationId
+                        : null
+                    }
                     message={message}
+                    onAnnotationFocused={annotationFocused}
+                    onAnnotate={annotateMessage}
                     onBookmark={toggleBookmark}
                     onToggle={toggleMessage}
                   />

@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchDocument, type DocumentSummary } from './api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createDocumentAnnotation,
+  deleteAnnotation,
+  fetchDocument,
+  fetchDocumentAnnotations,
+  updateAnnotation,
+  type Annotation,
+  type AnnotationDraft,
+  type DocumentSummary,
+} from './api'
+import { AnnotationsMenu } from './components/AnnotationsMenu'
 import { CopyButton } from './components/CopyButton'
 import {
   MarkdownOutline,
@@ -24,6 +34,8 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
   const [loading, setLoading] = useState(true)
   const [reloading, setReloading] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [focusAnnotationId, setFocusAnnotationId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scope = `document-${document.id}`
   const headings = useMemo(
@@ -50,6 +62,39 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
       active = false
     }
   }, [document])
+
+  useEffect(() => {
+    let active = true
+    fetchDocumentAnnotations(document)
+      .then((loaded) => {
+        if (active) setAnnotations(loaded)
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
+    return () => {
+      active = false
+    }
+  }, [document])
+
+  async function annotate(draft: AnnotationDraft) {
+    const created = await createDocumentAnnotation(document, draft)
+    setAnnotations((current) => [...current, created].sort((a, b) => a.start_line - b.start_line))
+  }
+
+  async function editAnnotation(annotation: Annotation, note: string) {
+    const updated = await updateAnnotation(annotation.id, note)
+    setAnnotations((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    )
+  }
+
+  async function removeAnnotation(annotation: Annotation) {
+    await deleteAnnotation(annotation.id)
+    setAnnotations((current) => current.filter((item) => item.id !== annotation.id))
+  }
+
+  const annotationFocused = useCallback(() => setFocusAnnotationId(null), [])
 
   async function reload() {
     if (reloading) return
@@ -95,6 +140,12 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
               {outlineOpen ? 'Hide outline' : 'Outline'}
             </button>
           )}
+          <AnnotationsMenu
+            annotations={annotations}
+            onDelete={removeAnnotation}
+            onNavigate={(annotation) => setFocusAnnotationId(annotation.id)}
+            onUpdate={editAnnotation}
+          />
           <CopyButton
             disabled={markdown === null}
             label="Copy document as Markdown"
@@ -123,7 +174,15 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
                   title="In this document"
                 />
               )}
-              <MarkdownRenderer headings={headings} markdown={markdown} scope={scope} />
+              <MarkdownRenderer
+                annotations={annotations}
+                focusAnnotationId={focusAnnotationId}
+                headings={headings}
+                markdown={markdown}
+                onAnnotationFocused={annotationFocused}
+                onCreateAnnotation={annotate}
+                scope={scope}
+              />
             </div>
             <div className="message-back-to-top">
               <button

@@ -3,8 +3,17 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from .annotations import (
+    AnnotationError,
+    create_document_annotation,
+    create_message_annotation,
+    delete_annotation,
+    list_document_annotations,
+    list_session_annotations,
+    update_annotation_note,
+)
 from .archive import ArchiveError, export_archive
 from .bookmarks import BookmarkBackupError, load_backup, save_backup
 from .config import Settings
@@ -43,6 +52,31 @@ class BookmarkBackup(BookmarkBackupInput):
 
 class SessionTitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+
+
+class AnnotationSelectionInput(BaseModel):
+    start_line: int = Field(ge=1)
+    end_line: int = Field(ge=1)
+    selected_text: str = Field(min_length=1, max_length=100_000)
+    prefix: str = Field(default="", max_length=500)
+    suffix: str = Field(default="", max_length=500)
+    note: str = Field(min_length=1, max_length=20_000)
+
+    @model_validator(mode="after")
+    def valid_line_range(self):
+        if self.end_line < self.start_line:
+            raise ValueError("end_line must be greater than or equal to start_line")
+        if not self.selected_text.strip():
+            raise ValueError("selected_text cannot be blank")
+        return self
+
+
+class MessageAnnotationInput(AnnotationSelectionInput):
+    message_index: int = Field(ge=1)
+
+
+class AnnotationNoteInput(BaseModel):
+    note: str = Field(min_length=1, max_length=20_000)
 
 
 def create_app(settings: Settings | None = None):
@@ -97,6 +131,40 @@ def create_app(settings: Settings | None = None):
             headers=headers,
         )
 
+    @application.get("/api/documents/{document_id}/annotations")
+    def document_annotations(document_id: str):
+        try:
+            load_document(configured.documents_path, document_id)
+        except DocumentError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {
+            "items": list_document_annotations(configured.database_path, document_id)
+        }
+
+    @application.post("/api/documents/{document_id}/annotations", status_code=201)
+    def add_document_annotation(document_id: str, payload: AnnotationSelectionInput):
+        note = payload.note.strip()
+        if not note:
+            raise HTTPException(status_code=422, detail="Annotation note cannot be blank")
+        try:
+            document = load_document(configured.documents_path, document_id)
+            return create_document_annotation(
+                configured.database_path,
+                document_id,
+                document.summary.path,
+                document.markdown,
+                payload.start_line,
+                payload.end_line,
+                payload.selected_text,
+                payload.prefix,
+                payload.suffix,
+                note,
+            )
+        except DocumentError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except AnnotationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @application.post("/api/sessions/discover")
     def discover(profile: str | None = Query(default=None)):
         try:
@@ -141,6 +209,58 @@ def create_app(settings: Settings | None = None):
         if result is None:
             raise HTTPException(status_code=404, detail="Session is not indexed")
         return result
+
+    @application.get("/api/sessions/{profile}/{session_id}/annotations")
+    def session_annotations(profile: str, session_id: str):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        return {
+            "items": list_session_annotations(
+                configured.database_path, profile, session_id
+            )
+        }
+
+    @application.post(
+        "/api/sessions/{profile}/{session_id}/annotations", status_code=201
+    )
+    def add_session_annotation(
+        profile: str, session_id: str, payload: MessageAnnotationInput
+    ):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        note = payload.note.strip()
+        if not note:
+            raise HTTPException(status_code=422, detail="Annotation note cannot be blank")
+        try:
+            return create_message_annotation(
+                configured.database_path,
+                profile,
+                session_id,
+                payload.message_index,
+                payload.start_line,
+                payload.end_line,
+                payload.selected_text,
+                payload.prefix,
+                payload.suffix,
+                note,
+            )
+        except AnnotationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @application.patch("/api/annotations/{annotation_id}")
+    def edit_annotation(annotation_id: int, payload: AnnotationNoteInput):
+        note = payload.note.strip()
+        if not note:
+            raise HTTPException(status_code=422, detail="Annotation note cannot be blank")
+        result = update_annotation_note(configured.database_path, annotation_id, note)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Annotation does not exist")
+        return result
+
+    @application.delete("/api/annotations/{annotation_id}", status_code=204)
+    def remove_annotation(annotation_id: int):
+        if not delete_annotation(configured.database_path, annotation_id):
+            raise HTTPException(status_code=404, detail="Annotation does not exist")
 
     @application.put("/api/sessions/{profile}/{session_id}/title")
     def set_title(profile: str, session_id: str, payload: SessionTitleInput):

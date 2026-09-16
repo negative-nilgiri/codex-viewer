@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import type { Message } from './api'
+import type { Annotation, AnnotationDraft, Message } from './api'
 import { CopyButton } from './components/CopyButton'
 import {
   MarkdownOutline,
@@ -14,15 +14,23 @@ function displayTime(value: string | null) {
 }
 
 export const MessageCard = memo(function MessageCard({
+  annotations,
   bookmarked,
   collapsed,
+  focusAnnotationId,
   message,
+  onAnnotationFocused,
+  onAnnotate,
   onBookmark,
   onToggle,
 }: {
+  annotations: Annotation[]
   bookmarked: boolean
   collapsed: boolean
+  focusAnnotationId?: number | null
   message: Message
+  onAnnotationFocused: (annotationId: number) => void
+  onAnnotate: (message: Message, draft: AnnotationDraft) => Promise<void>
   onBookmark: (message: Message) => void
   onToggle: (messageIndex: number) => void
 }) {
@@ -122,7 +130,15 @@ export const MessageCard = memo(function MessageCard({
                 title="In this message"
               />
             )}
-            <MarkdownRenderer headings={headings} markdown={message.markdown} scope={scope} />
+            <MarkdownRenderer
+              annotations={annotations}
+              focusAnnotationId={focusAnnotationId}
+              headings={headings}
+              markdown={message.markdown}
+              onAnnotationFocused={onAnnotationFocused}
+              onCreateAnnotation={(draft) => onAnnotate(message, draft)}
+              scope={scope}
+            />
           </div>
           {showBackToTop && (
             <div className="message-back-to-top">

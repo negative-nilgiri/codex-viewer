@@ -12,6 +12,8 @@ import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import { CopyButton } from './CopyButton'
 import { MermaidDiagram } from './MermaidDiagram'
+import { AnnotationSurface } from './AnnotationSurface'
+import type { Annotation, AnnotationDraft } from '../api'
 import {
   headingSlug,
   scrollHeadingIntoView,
@@ -26,7 +28,18 @@ function textContent(node: ReactNode): string {
   return ''
 }
 
-function MarkdownPre({ children }: { children?: ReactNode }) {
+function sourcePosition(node: ExtraProps['node']) {
+  const start = node?.position?.start.line
+  const end = node?.position?.end.line
+  return start && end
+    ? {
+        'data-source-start-line': String(start),
+        'data-source-end-line': String(end),
+      }
+    : {}
+}
+
+function MarkdownPre({ children, node }: { children?: ReactNode } & ExtraProps) {
   const code = Children.toArray(children)[0]
   const className = isValidElement<{ className?: string }>(code)
     ? code.props.className ?? ''
@@ -34,11 +47,15 @@ function MarkdownPre({ children }: { children?: ReactNode }) {
   const source = textContent(code).replace(/\n$/, '')
 
   if (className.split(' ').includes('language-mermaid')) {
-    return <MermaidDiagram source={source} />
+    return (
+      <div {...sourcePosition(node)}>
+        <MermaidDiagram source={source} />
+      </div>
+    )
   }
 
   return (
-    <div className="code-block">
+    <div className="code-block" {...sourcePosition(node)}>
       <CopyButton className="copy-button--code" label="Copy code" text={source} />
       <pre>{children}</pre>
     </div>
@@ -58,12 +75,44 @@ function fragmentValue(href: string) {
   }
 }
 
-function MarkdownTable({ children }: ComponentProps<'table'>) {
+function MarkdownTable({ children, node }: ComponentProps<'table'> & ExtraProps) {
   return (
-    <div className="table-scroll">
+    <div className="table-scroll" {...sourcePosition(node)}>
       <table>{children}</table>
     </div>
   )
+}
+
+function PositionedParagraph({ node, ...props }: ComponentProps<'p'> & ExtraProps) {
+  return <p {...props} {...sourcePosition(node)} />
+}
+
+function PositionedListItem({ node, ...props }: ComponentProps<'li'> & ExtraProps) {
+  return <li {...props} {...sourcePosition(node)} />
+}
+
+function PositionedUnorderedList({ node, ...props }: ComponentProps<'ul'> & ExtraProps) {
+  return <ul {...props} {...sourcePosition(node)} />
+}
+
+function PositionedOrderedList({ node, ...props }: ComponentProps<'ol'> & ExtraProps) {
+  return <ol {...props} {...sourcePosition(node)} />
+}
+
+function PositionedBlockquote({ node, ...props }: ComponentProps<'blockquote'> & ExtraProps) {
+  return <blockquote {...props} {...sourcePosition(node)} />
+}
+
+function PositionedTableCell({ node, ...props }: ComponentProps<'td'> & ExtraProps) {
+  return <td {...props} {...sourcePosition(node)} />
+}
+
+function PositionedTableHeading({ node, ...props }: ComponentProps<'th'> & ExtraProps) {
+  return <th {...props} {...sourcePosition(node)} />
+}
+
+function PositionedRule({ node, ...props }: ComponentProps<'hr'> & ExtraProps) {
+  return <hr {...props} {...sourcePosition(node)} />
 }
 
 function ScopedHeading({
@@ -85,7 +134,12 @@ function ScopedHeading({
   const id = known?.id ?? `${scope}--${fallback}`
 
   return (
-    <Heading {...props} className="markdown-heading" id={id}>
+    <Heading
+      {...props}
+      {...sourcePosition(node)}
+      className="markdown-heading"
+      id={id}
+    >
       <a
         aria-label={`Link to ${known?.text ?? textContent(children)}`}
         className="heading-anchor"
@@ -137,33 +191,58 @@ function createMarkdownComponents(headings: MarkdownHeading[], scope: string): C
     h4: scopedHeading('h4'),
     h5: scopedHeading('h5'),
     h6: scopedHeading('h6'),
+    blockquote: PositionedBlockquote,
+    hr: PositionedRule,
+    li: PositionedListItem,
+    ol: PositionedOrderedList,
+    p: PositionedParagraph,
     pre: MarkdownPre,
     table: MarkdownTable,
+    td: PositionedTableCell,
+    th: PositionedTableHeading,
+    ul: PositionedUnorderedList,
   }
 }
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
+  annotations,
+  focusAnnotationId,
   headings,
   markdown,
+  onCreateAnnotation,
+  onAnnotationFocused,
   scope,
 }: {
+  annotations: Annotation[]
+  focusAnnotationId?: number | null
   headings: MarkdownHeading[]
   markdown: string
+  onCreateAnnotation: (draft: AnnotationDraft) => Promise<void>
+  onAnnotationFocused?: (annotationId: number) => void
   scope: string
 }) {
   const components = createMarkdownComponents(headings, scope)
   return (
-    <Markdown
-      components={components}
-      rehypePlugins={[
-        rehypeRaw,
-        [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
-      ]}
-      remarkPlugins={[remarkGfm]}
-      urlTransform={(url) => url}
+    <AnnotationSurface
+      annotations={annotations}
+      contentKey={markdown}
+      focusAnnotationId={focusAnnotationId}
+      onCreate={onCreateAnnotation}
+      onFocused={onAnnotationFocused}
+      owner={scope}
     >
-      {markdown}
-    </Markdown>
+      <Markdown
+        components={components}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
+        ]}
+        remarkPlugins={[remarkGfm]}
+        urlTransform={(url) => url}
+      >
+        {markdown}
+      </Markdown>
+    </AnnotationSurface>
   )
 })
 

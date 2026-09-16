@@ -3,7 +3,7 @@ from contextlib import closing
 from pathlib import Path
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -51,6 +51,44 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (profile, session_id)
         REFERENCES sessions(profile, session_id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS annotations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type TEXT NOT NULL CHECK (target_type IN ('message', 'document')),
+    profile TEXT,
+    session_id TEXT,
+    message_index INTEGER,
+    document_id TEXT,
+    document_path TEXT,
+    start_line INTEGER NOT NULL CHECK (start_line >= 1),
+    end_line INTEGER NOT NULL CHECK (end_line >= start_line),
+    selected_text TEXT NOT NULL,
+    prefix TEXT NOT NULL DEFAULT '',
+    suffix TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (
+        (target_type = 'message'
+            AND profile IS NOT NULL
+            AND session_id IS NOT NULL
+            AND message_index IS NOT NULL
+            AND document_id IS NULL)
+        OR
+        (target_type = 'document'
+            AND document_id IS NOT NULL
+            AND document_path IS NOT NULL
+            AND profile IS NULL
+            AND session_id IS NULL
+            AND message_index IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS annotations_by_session
+    ON annotations(profile, session_id, message_index, start_line);
+CREATE INDEX IF NOT EXISTS annotations_by_document
+    ON annotations(document_id, start_line);
 """
 
 
@@ -75,7 +113,7 @@ def initialize(database_path: Path):
                 )
             else:
                 version = row["version"]
-                if version not in {1, 2, SCHEMA_VERSION}:
+                if version not in {1, 2, 3, SCHEMA_VERSION}:
                     raise RuntimeError(
                         f"Unsupported database schema {version}; "
                         f"expected {SCHEMA_VERSION}"
@@ -101,4 +139,6 @@ def initialize(database_path: Path):
                             "ALTER TABLE sessions ADD COLUMN title_override TEXT"
                         )
                     version = 3
+                if version == 3:
+                    version = 4
                 connection.execute("UPDATE schema_info SET version = ?", (version,))
