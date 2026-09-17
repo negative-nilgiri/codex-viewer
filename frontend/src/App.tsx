@@ -111,22 +111,25 @@ function bookmarkStorageKey(session: SessionSummary) {
   return `codex-sessions-viewer:bookmarks:${sessionIdentity(session)}`
 }
 
-function loadBookmarks(session: SessionSummary): Bookmark[] {
+function parseBookmarks(stored: string | null): Bookmark[] {
+  if (!stored) return []
+  const parsed: unknown = JSON.parse(stored)
+  if (!Array.isArray(parsed)) return []
+  return parsed
+    .filter(
+      (item): item is Bookmark =>
+        typeof item === 'object' &&
+        item !== null &&
+        Number.isInteger((item as Bookmark).messageIndex) &&
+        (item as Bookmark).messageIndex > 0 &&
+        typeof (item as Bookmark).title === 'string',
+    )
+    .sort((left, right) => left.messageIndex - right.messageIndex)
+}
+
+function loadBookmarks(storageKey: string): Bookmark[] {
   try {
-    const stored = localStorage.getItem(bookmarkStorageKey(session))
-    if (!stored) return []
-    const parsed: unknown = JSON.parse(stored)
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter(
-        (item): item is Bookmark =>
-          typeof item === 'object' &&
-          item !== null &&
-          Number.isInteger((item as Bookmark).messageIndex) &&
-          (item as Bookmark).messageIndex > 0 &&
-          typeof (item as Bookmark).title === 'string',
-      )
-      .sort((left, right) => left.messageIndex - right.messageIndex)
+    return parseBookmarks(localStorage.getItem(storageKey))
   } catch (error) {
     console.warn('Could not restore message bookmarks', error)
     return []
@@ -174,6 +177,7 @@ function Transcript({
   session: SessionSummary
   onSynced: () => Promise<void>
 }) {
+  const bookmarkKey = bookmarkStorageKey(session)
   const virtuoso = useRef<VirtuosoHandle>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const blocksRef = useRef(new Map<number, Message[]>())
@@ -205,7 +209,7 @@ function Transcript({
   const [searchError, setSearchError] = useState<string | null>(null)
   const [goToValue, setGoToValue] = useState('')
   const [directJumpTarget, setDirectJumpTarget] = useState<number | null>(null)
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(session))
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks(bookmarkKey))
   const [bookmarkOperation, setBookmarkOperation] = useState<'export' | 'restore' | null>(null)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [focusAnnotationId, setFocusAnnotationId] = useState<number | null>(null)
@@ -264,11 +268,28 @@ function Transcript({
 
   useEffect(() => {
     try {
-      localStorage.setItem(bookmarkStorageKey(session), JSON.stringify(bookmarks))
+      localStorage.setItem(bookmarkKey, JSON.stringify(bookmarks))
     } catch (error) {
       console.warn('Could not persist message bookmarks', error)
     }
-  }, [bookmarks, session])
+  }, [bookmarkKey, bookmarks])
+
+  useEffect(() => {
+    function handleBookmarkStorage(event: StorageEvent) {
+      if (event.storageArea !== localStorage || event.key !== bookmarkKey) return
+      try {
+        const incoming = parseBookmarks(event.newValue)
+        setBookmarks((current) =>
+          JSON.stringify(current) === JSON.stringify(incoming) ? current : incoming,
+        )
+      } catch (error) {
+        console.warn('Could not synchronize message bookmarks', error)
+      }
+    }
+
+    window.addEventListener('storage', handleBookmarkStorage)
+    return () => window.removeEventListener('storage', handleBookmarkStorage)
+  }, [bookmarkKey])
 
   useEffect(() => {
     function handleFindShortcut(event: KeyboardEvent) {
