@@ -208,7 +208,10 @@ def sync_session(
                 role, markdown, timestamp = message
                 message_count += 1
                 added_messages += 1
-                if title == "Untitled session" and role == "user":
+                if title in {
+                    "Untitled session",
+                    f"Session {session_id[:8]}",
+                } and role == "user":
                     title = normalized_title(markdown)
                 connection.execute(
                     """

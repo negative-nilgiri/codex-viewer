@@ -82,6 +82,56 @@ def test_first_sync_is_incremental_idempotent_and_ignores_tools(archive):
     assert "exec_command" not in repr(messages)
 
 
+def test_sync_supports_item_completed_codex_messages(archive):
+    database, sources, rollout = archive
+    write_lines(
+        rollout,
+        [
+            {
+                "timestamp": "2026-08-30T08:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": SESSION_ID, "cwd": "/workspace/project"},
+            },
+            {
+                "timestamp": "2026-08-30T08:00:01Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "<environment_context>hidden"}
+                    ],
+                },
+            },
+            event(
+                "2026-08-30T08:00:02Z",
+                "item_completed",
+                item={
+                    "type": "UserMessage",
+                    "content": [{"type": "text", "text": "Visible **request**"}],
+                },
+            ),
+            event(
+                "2026-08-30T08:00:03Z",
+                "item_completed",
+                item={
+                    "type": "AgentMessage",
+                    "content": [{"type": "Text", "text": "Visible response"}],
+                },
+            ),
+        ],
+    )
+
+    result = sync_session(database, sources, "codex_2", SESSION_ID)
+
+    assert result.message_count == 2
+    messages = get_messages(database, "codex_2", SESSION_ID, 0, 30)["items"]
+    assert [(item["role"], item["markdown"]) for item in messages] == [
+        ("user", "Visible **request**"),
+        ("assistant", "Visible response"),
+    ]
+
+
 def test_append_imports_only_new_complete_lines(archive):
     database, sources, rollout = archive
     first = sync_session(database, sources, "codex_2", SESSION_ID)

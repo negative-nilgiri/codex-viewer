@@ -61,6 +61,30 @@ class CodexAdapter:
             role = "user"
         elif kind == "agent_message":
             role = "assistant"
+        elif kind == "item_completed":
+            item = payload.get("item")
+            if not isinstance(item, dict):
+                return None
+            item_kind = item.get("type")
+            if item_kind == "UserMessage":
+                role = "user"
+            elif item_kind == "AgentMessage":
+                role = "assistant"
+            else:
+                return None
+            content = item.get("content")
+            if not isinstance(content, list):
+                return None
+            text = [
+                block["text"]
+                for block in content
+                if isinstance(block, dict)
+                and isinstance(block.get("text"), str)
+                and block["text"].strip()
+            ]
+            if not text:
+                return None
+            return role, "\n\n".join(text), self.event_timestamp(event)
         else:
             return None
         markdown = payload.get("message")
