@@ -400,16 +400,21 @@ The underlying format is intentionally simple:
 ```json
 {
   "019fdbaf-c2ea-7e50-ae8f-8fa79e733904": {
-    "title": "Codex frontend UI"
+    "title": "Codex frontend UI",
+    "hidden": true
   }
 }
 ```
 
 The JSON format remains deliberately simple. A title is scoped by session UUID,
 so an original and archived copy with the same UUID receive the same custom
-title. Live message bookmarks and their labels are stored in the current
-browser's local storage. They can also be exported as durable snapshots from
-the viewer.
+title. The eye action beside a session hides it from the normal sidebar without
+deleting its transcript or index; the crossed-eye button in the sidebar opens
+the hidden-session window and allows it to be restored. This preference is also
+stored in the same metadata object as `"hidden": true` and therefore applies to
+every source copy with that session UUID. Live message bookmarks and their
+labels are stored in the current browser's local storage. They can also be
+exported as durable snapshots from the viewer.
 
 ## Reading controls
 
@@ -688,6 +693,7 @@ POST /api/sessions/{source_id}/{session_id}/sync
 POST /api/sessions/{source_id}/{session_id}/archive
 PUT  /api/sessions/{source_id}/{session_id}/title
 DELETE /api/sessions/{source_id}/{session_id}/title
+PUT  /api/sessions/{source_id}/{session_id}/visibility
 PATCH /api/annotations/{annotation_id}
 DELETE /api/annotations/{annotation_id}
 ```

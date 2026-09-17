@@ -134,6 +134,25 @@ def test_session_title_can_be_edited_and_reset_without_rescanning(tmp_path):
         assert json.loads((tmp_path / "session_metadata.json").read_text()) == {}
 
 
+def test_session_can_be_hidden_and_restored_without_removing_it(tmp_path):
+    with make_client(tmp_path) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/visibility"
+
+        hidden = client.put(path, json={"hidden": True})
+        assert hidden.status_code == 200
+        assert hidden.json()["hidden"] is True
+        listed = client.get("/api/sessions").json()["items"]
+        assert len(listed) == 1
+        assert listed[0]["hidden"] is True
+        metadata = json.loads((tmp_path / "session_metadata.json").read_text())
+        assert metadata[SESSION_ID] == {"hidden": True}
+
+        restored = client.put(path, json={"hidden": False})
+        assert restored.status_code == 200
+        assert restored.json()["hidden"] is False
+        assert json.loads((tmp_path / "session_metadata.json").read_text()) == {}
+
+
 def test_bookmark_backup_export_overwrites_and_restore_reads_snapshot(tmp_path):
     with make_client(tmp_path) as client:
         path = f"/api/sessions/codex_2/{SESSION_ID}/bookmarks"

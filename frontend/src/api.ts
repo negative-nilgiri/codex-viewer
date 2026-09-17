@@ -3,6 +3,7 @@ export type SessionSummary = {
   session_id: string
   title: string
   title_overridden: boolean
+  hidden: boolean
   workspace: string | null
   created_at: string | null
   last_activity_at: string | null
@@ -202,6 +203,17 @@ export function updateSessionTitle(
 
 export function resetSessionTitle(session: SessionSummary): Promise<SessionSummary> {
   return request<SessionSummary>(`${sessionPath(session)}/title`, { method: 'DELETE' })
+}
+
+export function updateSessionVisibility(
+  session: SessionSummary,
+  hidden: boolean,
+): Promise<SessionSummary> {
+  return request<SessionSummary>(`${sessionPath(session)}/visibility`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hidden }),
+  })
 }
 
 export function archiveSession(session: SessionSummary): Promise<ArchiveResult> {

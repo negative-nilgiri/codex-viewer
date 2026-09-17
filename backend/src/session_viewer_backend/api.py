@@ -28,7 +28,12 @@ from .repository import (
     update_session_title,
 )
 from .rollout import RolloutError
-from .session_metadata import SessionMetadataError, save_session_title
+from .session_metadata import (
+    SessionMetadataError,
+    load_hidden_session_ids,
+    save_session_hidden,
+    save_session_title,
+)
 from .sources import SourceConfigurationError, load_sources, select_sources
 from .sync import sync_session
 
@@ -52,6 +57,10 @@ class BookmarkBackup(BookmarkBackupInput):
 
 class SessionTitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+
+
+class SessionVisibilityInput(BaseModel):
+    hidden: bool
 
 
 class AnnotationSelectionInput(BaseModel):
@@ -82,6 +91,21 @@ class AnnotationNoteInput(BaseModel):
 def create_app(settings: Settings | None = None):
     configured = settings or Settings.from_environment()
 
+    def add_session_visibility(items):
+        try:
+            hidden_ids = load_hidden_session_ids(configured.session_metadata_path)
+        except SessionMetadataError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        for item in items:
+            item["hidden"] = item["session_id"].lower() in hidden_ids
+        return items
+
+    def session_response(profile: str, session_id: str):
+        result = get_session(configured.database_path, profile, session_id)
+        if result is None:
+            return None
+        return add_session_visibility([result])[0]
+
     @asynccontextmanager
     async def lifespan(_application):
         initialize(configured.database_path)
@@ -98,7 +122,11 @@ def create_app(settings: Settings | None = None):
 
     @application.get("/api/sessions")
     def sessions(limit: int = Query(default=100, ge=1, le=500)):
-        return {"items": list_sessions(configured.database_path, limit)}
+        return {
+            "items": add_session_visibility(
+                list_sessions(configured.database_path, limit)
+            )
+        }
 
     @application.get("/api/documents")
     def documents():
@@ -180,7 +208,7 @@ def create_app(settings: Settings | None = None):
 
     @application.get("/api/sessions/{profile}/{session_id}")
     def session(profile: str, session_id: str):
-        result = get_session(configured.database_path, profile, session_id)
+        result = session_response(profile, session_id)
         if result is None:
             raise HTTPException(status_code=404, detail="Session is not indexed")
         return result
@@ -274,7 +302,7 @@ def create_app(settings: Settings | None = None):
             update_session_title(configured.database_path, session_id, title)
         except SessionMetadataError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        return get_session(configured.database_path, profile, session_id)
+        return session_response(profile, session_id)
 
     @application.delete("/api/sessions/{profile}/{session_id}/title")
     def reset_title(profile: str, session_id: str):
@@ -285,7 +313,21 @@ def create_app(settings: Settings | None = None):
             update_session_title(configured.database_path, session_id, None)
         except SessionMetadataError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        return get_session(configured.database_path, profile, session_id)
+        return session_response(profile, session_id)
+
+    @application.put("/api/sessions/{profile}/{session_id}/visibility")
+    def set_visibility(
+        profile: str, session_id: str, payload: SessionVisibilityInput
+    ):
+        if get_session(configured.database_path, profile, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session is not indexed")
+        try:
+            save_session_hidden(
+                configured.session_metadata_path, session_id, payload.hidden
+            )
+        except SessionMetadataError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return session_response(profile, session_id)
 
     @application.put(
         "/api/sessions/{profile}/{session_id}/bookmarks",

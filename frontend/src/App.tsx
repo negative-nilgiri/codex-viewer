@@ -15,6 +15,7 @@ import {
   searchMessages,
   syncSession,
   updateAnnotation,
+  updateSessionVisibility,
   updateSessionTitle,
   type Annotation,
   type AnnotationDraft,
@@ -41,6 +42,16 @@ type FoldState = {
 type Bookmark = {
   messageIndex: number
   title: string
+}
+
+function EyeIcon({ crossed = false }: { crossed?: boolean }) {
+  return (
+    <svg aria-hidden="true" className="eye-icon" viewBox="0 0 24 24">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.8" />
+      {crossed && <path d="m4 4 16 16" />}
+    </svg>
+  )
 }
 
 function displayClockTime(value: string | null) {
@@ -93,6 +104,19 @@ function groupSessions(sessions: SessionSummary[]) {
 
 function sessionIdentity(session: SessionSummary) {
   return `${session.profile}:${session.session_id}`
+}
+
+function selectedVisibleSession(
+  sessions: SessionSummary[],
+  current: SessionSummary | null,
+) {
+  const visible = sessions.filter((session) => !session.hidden)
+  if (!current) return visible[0] ?? null
+  return (
+    visible.find((item) => sessionIdentity(item) === sessionIdentity(current)) ??
+    visible[0] ??
+    null
+  )
 }
 
 function blockStartFor(index: number) {
@@ -1146,6 +1170,8 @@ function App() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(viewMode === 'sessions')
   const [discovering, setDiscovering] = useState(false)
+  const [hiddenSessionsOpen, setHiddenSessionsOpen] = useState(false)
+  const [visibilityOperation, setVisibilityOperation] = useState<string | null>(null)
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -1156,14 +1182,7 @@ function App() {
     const loaded = await fetchSessions()
     setSessions(loaded)
     setSessionsLoaded(true)
-    setSelected((current) => {
-      if (!current) return loaded[0] ?? null
-      return (
-        loaded.find((item) => sessionIdentity(item) === sessionIdentity(current)) ??
-        loaded[0] ??
-        null
-      )
-    })
+    setSelected((current) => selectedVisibleSession(loaded, current))
   }
 
   useEffect(() => {
@@ -1177,7 +1196,7 @@ function App() {
       .then((loaded) => {
         if (!active) return
         setSessions(loaded)
-        setSelected(loaded[0] ?? null)
+        setSelected(selectedVisibleSession(loaded, null))
         setSessionsLoaded(true)
       })
       .catch((caught: unknown) => {
@@ -1219,6 +1238,15 @@ function App() {
     const timer = window.setTimeout(() => setCatalogNotice(null), 5000)
     return () => window.clearTimeout(timer)
   }, [catalogNotice])
+
+  useEffect(() => {
+    if (!hiddenSessionsOpen) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setHiddenSessionsOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [hiddenSessionsOpen])
 
   useEffect(() => {
     localStorage.setItem(
@@ -1280,7 +1308,25 @@ function App() {
     setViewMode('sessions')
   }
 
-  const sessionGroups = groupSessions(sessions)
+  async function changeSessionVisibility(session: SessionSummary, hidden: boolean) {
+    const identity = sessionIdentity(session)
+    if (visibilityOperation) return
+    setVisibilityOperation(identity)
+    setError(null)
+    try {
+      await updateSessionVisibility(session, hidden)
+      await refreshSessions()
+      setCatalogNotice(hidden ? 'Session hidden.' : 'Session restored.')
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setVisibilityOperation(null)
+    }
+  }
+
+  const visibleSessions = sessions.filter((session) => !session.hidden)
+  const hiddenSessions = sessions.filter((session) => session.hidden)
+  const sessionGroups = groupSessions(visibleSessions)
 
   return (
     <main className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}`}>
@@ -1309,6 +1355,17 @@ function App() {
             </div>
           )}
           <div className="sidebar-heading-actions">
+            {!sidebarCollapsed && viewMode === 'sessions' && (
+              <button
+                aria-label="Hidden sessions"
+                className="hidden-sessions-trigger"
+                onClick={() => setHiddenSessionsOpen(true)}
+                title="Hidden sessions"
+                type="button"
+              >
+                <EyeIcon crossed />
+              </button>
+            )}
             {!sidebarCollapsed && (
               <button
                 aria-label={viewMode === 'sessions' ? 'Rescan sessions' : 'Refresh documents'}
@@ -1370,6 +1427,13 @@ function App() {
                 <p>No session transcripts were discovered.</p>
                 <code>viewer discover</code>
               </div>
+            ) : visibleSessions.length === 0 ? (
+              <div className="empty-sidebar">
+                <p>All discovered sessions are hidden.</p>
+                <button onClick={() => setHiddenSessionsOpen(true)} type="button">
+                  View hidden sessions
+                </button>
+              </div>
             ) : (
               <nav aria-label="Recently active sessions">
                 {sessionGroups.map((group) => (
@@ -1378,25 +1442,36 @@ function App() {
                     {group.sessions.map((session) => {
                       const active = selected && sessionIdentity(selected) === sessionIdentity(session)
                       return (
-                        <button
-                          className={`session-link${active ? ' session-link--active' : ''}`}
-                          key={sessionIdentity(session)}
-                          onClick={() => setSelected(session)}
-                          type="button"
-                        >
-                          <strong>{session.title}</strong>
-                          <div className="session-meta">
-                            <span className={!session.source_present ? 'session-state--unavailable' : ''}>
-                              {session.profile} ·{' '}
-                              {!session.source_present
-                                ? 'Unavailable'
-                                : session.indexed
-                                  ? `${session.message_count} messages`
-                                  : 'Not indexed'}
-                            </span>
-                            <time>{displayClockTime(session.last_activity_at)}</time>
-                          </div>
-                        </button>
+                        <div className="session-link-row" key={sessionIdentity(session)}>
+                          <button
+                            className={`session-link${active ? ' session-link--active' : ''}`}
+                            onClick={() => setSelected(session)}
+                            type="button"
+                          >
+                            <strong>{session.title}</strong>
+                            <div className="session-meta">
+                              <span className={!session.source_present ? 'session-state--unavailable' : ''}>
+                                {session.profile} ·{' '}
+                                {!session.source_present
+                                  ? 'Unavailable'
+                                  : session.indexed
+                                    ? `${session.message_count} messages`
+                                    : 'Not indexed'}
+                              </span>
+                              <time>{displayClockTime(session.last_activity_at)}</time>
+                            </div>
+                          </button>
+                          <button
+                            aria-label={`Hide ${session.title}`}
+                            className="session-visibility-action"
+                            disabled={visibilityOperation === sessionIdentity(session)}
+                            onClick={() => void changeSessionVisibility(session, true)}
+                            title="Hide session"
+                            type="button"
+                          >
+                            <EyeIcon crossed />
+                          </button>
+                        </div>
                       )
                     })}
                   </section>
@@ -1430,6 +1505,61 @@ function App() {
           </div>
         )}
       </section>
+
+      {hiddenSessionsOpen && (
+        <div
+          className="hidden-sessions-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setHiddenSessionsOpen(false)
+          }}
+        >
+          <section
+            aria-labelledby="hidden-sessions-title"
+            aria-modal="true"
+            className="hidden-sessions-dialog"
+            role="dialog"
+          >
+            <header>
+              <div>
+                <h2 id="hidden-sessions-title">Hidden sessions</h2>
+                <p>Hidden sessions remain indexed and can be restored at any time.</p>
+              </div>
+              <button
+                aria-label="Close hidden sessions"
+                onClick={() => setHiddenSessionsOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <div className="hidden-sessions-list">
+              {hiddenSessions.length === 0 ? (
+                <p className="hidden-sessions-empty">No hidden sessions.</p>
+              ) : (
+                hiddenSessions.map((session) => (
+                  <div className="hidden-session-row" key={sessionIdentity(session)}>
+                    <div>
+                      <strong>{session.title}</strong>
+                      <span>
+                        {session.profile} · {session.message_count} messages ·{' '}
+                        {displayClockTime(session.last_activity_at)}
+                      </span>
+                    </div>
+                    <button
+                      disabled={visibilityOperation === sessionIdentity(session)}
+                      onClick={() => void changeSessionVisibility(session, false)}
+                      type="button"
+                    >
+                      <EyeIcon />
+                      Restore
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
