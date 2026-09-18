@@ -8,8 +8,10 @@ import {
 } from 'react'
 import Markdown, { type Components, type ExtraProps } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import { CopyButton } from './CopyButton'
 import { MermaidDiagram } from './MermaidDiagram'
 import { AnnotationSurface } from './AnnotationSurface'
@@ -20,6 +22,7 @@ import {
   type MarkdownHeading,
 } from '../markdown'
 import 'highlight.js/styles/github-dark-dimmed.css'
+import 'katex/dist/katex.min.css'
 
 function textContent(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -235,9 +238,10 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         components={components}
         rehypePlugins={[
           rehypeRaw,
+          [rehypeKatex, { throwOnError: false, strict: 'warn' }],
           [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
         ]}
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
         urlTransform={(url) => url}
       >
         {markdown}

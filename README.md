@@ -288,8 +288,8 @@ used as its display title, with the filename as the fallback.
 Opening a document reads that file directly from disk and renders the complete
 document as one continuous page. The browser caches the loaded Markdown for the
 current SPA session; **Reload** explicitly reads the file again. Documents use
-the same headings, outline, Mermaid diagrams, syntax highlighting, raw HTML,
-and copy buttons as conversation messages.
+the same headings, outline, Mermaid diagrams, mathematical notation, syntax
+highlighting, raw HTML, and copy buttons as conversation messages.
 
 Documents are never written to SQLite and require no discovery, indexing, or
 synchronization command. The API only lists filesystem metadata and returns the
@@ -465,6 +465,21 @@ User messages, assistant messages, and standalone documents share the same
 GitHub-flavored Markdown pipeline. The viewer supports headings, lists, tables,
 task lists, blockquotes, links, inline code, fenced code, and raw HTML.
 Recognized fenced-code languages receive syntax highlighting.
+
+TeX-style mathematics is rendered with KaTeX. Use single dollar delimiters for
+inline notation and double dollar delimiters for a display equation:
+
+```markdown
+Einstein's relation is $E = mc^2$.
+
+$$
+\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
+$$
+```
+
+Long display equations scroll horizontally instead of widening the message.
+Inline code and fenced code are never interpreted as mathematics. Escape a
+literal paired dollar sign as `\$` when it could otherwise look like math.
 
 Headings receive message-scoped anchors, with a small `#` link visible only on
 hover. Ordinary same-document Markdown links are resolved inside their own
