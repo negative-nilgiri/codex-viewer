@@ -21,6 +21,7 @@ import {
   scrollHeadingIntoView,
   type MarkdownHeading,
 } from '../markdown'
+import { rehypeDisplayMathPosition } from '../rehypeDisplayMathPosition'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import 'katex/dist/katex.min.css'
 
@@ -238,6 +239,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         components={components}
         rehypePlugins={[
           rehypeRaw,
+          rehypeDisplayMathPosition,
           [rehypeKatex, { throwOnError: false, strict: 'warn' }],
           [rehypeHighlight, { detect: false, plainText: ['mermaid'] }],
         ]}

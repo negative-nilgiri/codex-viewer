@@ -144,6 +144,7 @@ state is React `useState` plus `localStorage`.
 | `DocumentViewer.tsx` | A whole Markdown document as one page, with outline, annotations, reload. |
 | `api.ts` | Types for every API payload plus `fetch` wrappers. Keep in sync with `api.py` response shapes. |
 | `markdown.ts` | Heading extraction, slugs, scoped heading IDs, scroll helpers. |
+| `rehypeDisplayMathPosition.ts` | Rehype plugin (between `rehype-raw` and `rehype-katex`) that wraps display math in a `data-source-*-line` element, because rehype-katex drops the source position and the equation could not be annotated. |
 | `components/MarkdownRenderer.tsx` | The shared Markdown pipeline (remark-gfm, remark-math, rehype-raw, rehype-katex, rehype-highlight), custom element components that stamp `data-source-start-line` / `data-source-end-line`, and `MarkdownOutline`. |
 | `components/AnnotationSurface.tsx` | Text selection capture, line refinement, annotation anchoring and highlighting (CSS Custom Highlight API), floating Annotate button and editor. |
 | `components/AnnotationsMenu.tsx` | The Annotations dropdown: list, jump, edit, delete. |
