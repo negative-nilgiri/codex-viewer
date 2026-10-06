@@ -436,7 +436,9 @@ exported as durable snapshots from the viewer.
   or document, grouped by message, with the full quotation and the headings it
   sits under. **Jump** loads and expands the message when necessary, then jumps
   to and briefly emphasizes the annotated passage. Notes can be edited or deleted
-  in place. See [Copy annotations for an agent](#copy-annotations-for-an-agent).
+  in place; to discard many at once, tick them and press **Delete selected**,
+  which asks for confirmation once. See
+  [Copy annotations for an agent](#copy-annotations-for-an-agent).
 - **Export backup** atomically overwrites `bookmarks/<session-id>.json` with the
   current list. **Restore backup** confirms and then replaces the browser list
   directly; it does not scan or synchronize the transcript.

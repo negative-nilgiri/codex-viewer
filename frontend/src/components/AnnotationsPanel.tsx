@@ -60,6 +60,7 @@ export function AnnotationsPanel({
   const [editing, setEditing] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
   const [working, setWorking] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedAnnotations = annotations.filter((annotation) =>
@@ -92,8 +93,32 @@ export function AnnotationsPanel({
     }
   }
 
+  async function removeSelected() {
+    const targets = selectedAnnotations
+    if (targets.length === 0 || deleting || working !== null) return
+    const count = `${targets.length} selected annotation${targets.length === 1 ? '' : 's'}`
+    if (!window.confirm(`Delete ${count}? This cannot be undone.`)) return
+    setDeleting(true)
+    setError(null)
+    const failed = new Set<number>()
+    let firstError: string | null = null
+    for (const annotation of targets) {
+      try {
+        await onDelete(annotation)
+      } catch (caught: unknown) {
+        failed.add(annotation.id)
+        firstError ??= caught instanceof Error ? caught.message : String(caught)
+      }
+    }
+    setSelected(failed)
+    if (failed.size) {
+      setError(`${failed.size} of ${targets.length} could not be deleted: ${firstError}`)
+    }
+    setDeleting(false)
+  }
+
   async function remove(annotation: Annotation) {
-    if (working !== null) return
+    if (working !== null || deleting) return
     if (!window.confirm('Delete this annotation?')) return
     setWorking(annotation.id)
     setError(null)
@@ -144,6 +169,14 @@ export function AnnotationsPanel({
             label="Copy all annotations as Markdown"
             text={formatAnnotations(annotations)}
           />
+          <button
+            disabled={selectedAnnotations.length === 0 || deleting}
+            onClick={() => void removeSelected()}
+            title="Delete the selected annotations"
+            type="button"
+          >
+            {deleting ? 'Deleting…' : `Delete selected (${selectedAnnotations.length})`}
+          </button>
         </div>
       )}
       <div className="annotations-panel-scroll">
@@ -201,7 +234,7 @@ export function AnnotationsPanel({
                       </button>
                       <button
                         aria-label="Delete annotation"
-                        disabled={working !== null}
+                        disabled={working !== null || deleting}
                         onClick={() => void remove(annotation)}
                         title="Delete annotation"
                         type="button"

@@ -149,7 +149,7 @@ state is React `useState` plus `localStorage`.
 | `rehypeDisplayMathPosition.ts` | Rehype plugin (between `rehype-raw` and `rehype-katex`) that wraps display math in a `data-source-*-line` element, because rehype-katex drops the source position and the equation could not be annotated. |
 | `components/MarkdownRenderer.tsx` | The shared Markdown pipeline (remark-gfm, remark-math, rehype-raw, rehype-katex, rehype-highlight), custom element components that stamp `data-source-start-line` / `data-source-end-line`, and `MarkdownOutline`. |
 | `components/AnnotationSurface.tsx` | Text selection capture, line refinement, annotation anchoring and highlighting (CSS Custom Highlight API), floating Annotate button and editor. |
-| `components/AnnotationsPanel.tsx` | The Annotations toggle button and side panel: grouped list, selection, jump, edit, delete, and the copy buttons. |
+| `components/AnnotationsPanel.tsx` | The Annotations toggle button and side panel: grouped list, selection, jump, edit, delete (single, or Delete selected with one confirmation), and the copy buttons. |
 | `annotationCopy.ts` | Pure functions that turn an annotation into the Markdown that is copied (label, headings, quote, note). The panel renders the same parts, so what you see is what is copied. |
 | `components/MermaidDiagram.tsx` | Lazy-loaded Mermaid rendering, Raw toggle, legend built from `classDef`. |
 | `components/CopyButton.tsx` | Clipboard copy with fallback. |
