@@ -98,6 +98,10 @@ export type Annotation = {
   suffix: string
   content_hash: string
   note: string
+  // Markdown source of the annotated lines and the heading lines above them.
+  // null on annotations saved before this was captured, when the source changed.
+  source_text: string | null
+  source_context: string | null
   created_at: string
   updated_at: string
 }

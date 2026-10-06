@@ -162,11 +162,13 @@ def create_app(settings: Settings | None = None):
     @application.get("/api/documents/{document_id}/annotations")
     def document_annotations(document_id: str):
         try:
-            load_document(configured.documents_path, document_id)
+            loaded = load_document(configured.documents_path, document_id)
         except DocumentError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return {
-            "items": list_document_annotations(configured.database_path, document_id)
+            "items": list_document_annotations(
+                configured.database_path, document_id, loaded.markdown
+            )
         }
 
     @application.post("/api/documents/{document_id}/annotations", status_code=201)

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 from fastapi.testclient import TestClient
 
@@ -11,7 +12,12 @@ from session_viewer_backend.sync import sync_session
 SESSION_ID = "019fdbaf-c2ea-7e50-ae8f-8fa79e733904"
 
 
-def make_client(tmp_path, message_count=4):
+def make_client(tmp_path, message_count=4, messages=None):
+    texts = (
+        messages
+        if messages is not None
+        else [f"Message {index}" for index in range(message_count)]
+    )
     sessions_root = tmp_path / "sessions"
     rollout = (
         sessions_root
@@ -34,10 +40,10 @@ def make_client(tmp_path, message_count=4):
                 "type": "event_msg",
                 "payload": {
                     "type": "user_message",
-                    "message": f"Message {index}",
+                    "message": text,
                 },
             }
-            for index in range(message_count)
+            for index, text in enumerate(texts)
         ],
     ]
     rollout.write_text("".join(json.dumps(item) + "\n" for item in events))
@@ -309,3 +315,111 @@ def test_document_annotations_keep_document_identity_and_validate_lines(tmp_path
             },
         )
         assert invalid.status_code == 400
+
+
+HEADED_MESSAGE = (
+    "## Heading\n### Subheading\nsome-text with **bold**\n\n"
+    "$$\nx = \\frac{1}{2}\n$$\n"
+)
+
+
+def annotation_payload(start_line, end_line, **overrides):
+    return {
+        "message_index": 1,
+        "start_line": start_line,
+        "end_line": end_line,
+        "selected_text": "some-text",
+        "note": "some-annotation",
+        **overrides,
+    }
+
+
+def test_message_annotation_stores_source_and_heading_context(tmp_path):
+    with make_client(tmp_path, messages=[HEADED_MESSAGE]) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/annotations"
+
+        prose = client.post(path, json=annotation_payload(3, 3)).json()
+        assert prose["source_text"] == "some-text with **bold**"
+        assert prose["source_context"] == "## Heading\n### Subheading"
+
+        equation = client.post(
+            path, json=annotation_payload(5, 7, selected_text="x 1 2 garbled")
+        ).json()
+        assert equation["source_text"] == "$$\nx = \\frac{1}{2}\n$$"
+        assert equation["source_context"] == "## Heading\n### Subheading"
+
+        assert client.get(path).json()["items"] == [prose, equation]
+
+
+def test_document_annotation_stores_source_and_heading_context(tmp_path):
+    client = make_client(tmp_path)
+    (tmp_path / "documents" / "notes.md").write_text("# Notes\n## Part\nA sentence.\n")
+
+    with client:
+        document = client.get("/api/documents").json()["items"][0]
+        path = f"/api/documents/{document['id']}/annotations"
+        created = client.post(
+            path,
+            json={
+                "start_line": 3,
+                "end_line": 3,
+                "selected_text": "sentence",
+                "note": "n",
+            },
+        ).json()
+
+        assert created["source_text"] == "A sentence."
+        assert created["source_context"] == "# Notes\n## Part"
+        assert client.get(path).json()["items"] == [created]
+
+
+def clear_source_snapshots(database_path):
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE annotations SET source_text = NULL, source_context = NULL")
+
+
+def test_legacy_message_annotations_are_filled_on_read_only_while_unchanged(tmp_path):
+    with make_client(tmp_path, messages=[HEADED_MESSAGE]) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/annotations"
+        created = client.post(path, json=annotation_payload(3, 3)).json()
+        clear_source_snapshots(tmp_path / "viewer.sqlite3")
+
+        listed = client.get(path).json()["items"][0]
+        assert listed["source_text"] == created["source_text"]
+        assert listed["source_context"] == created["source_context"]
+
+        with sqlite3.connect(tmp_path / "viewer.sqlite3") as connection:
+            stored = connection.execute(
+                "SELECT source_text FROM annotations"
+            ).fetchone()[0]
+            assert stored is None
+            connection.execute("UPDATE messages SET markdown = 'edited'")
+
+        changed = client.get(path).json()["items"][0]
+        assert changed["source_text"] is None
+        assert changed["source_context"] is None
+
+
+def test_legacy_document_annotations_are_filled_from_the_current_file(tmp_path):
+    client = make_client(tmp_path)
+    document_path = tmp_path / "documents" / "notes.md"
+    document_path.write_text("# Notes\nA sentence.\n")
+
+    with client:
+        document = client.get("/api/documents").json()["items"][0]
+        path = f"/api/documents/{document['id']}/annotations"
+        client.post(
+            path,
+            json={"start_line": 2, "end_line": 2, "selected_text": "sentence", "note": "n"},
+        )
+        clear_source_snapshots(tmp_path / "viewer.sqlite3")
+
+        filled = client.get(path).json()["items"][0]
+        assert (filled["source_text"], filled["source_context"]) == (
+            "A sentence.",
+            "# Notes",
+        )
+
+        document_path.write_text("# Notes\nA different sentence.\n")
+        changed = client.get(path).json()["items"][0]
+        assert changed["source_text"] is None

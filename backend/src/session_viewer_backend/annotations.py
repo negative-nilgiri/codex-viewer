@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .database import connect, initialize
+from .markdown_source import source_snapshot
 
 
 class AnnotationError(ValueError):
@@ -26,6 +27,23 @@ def _row_dict(row):
     return None if row is None else dict(row)
 
 
+def _with_legacy_source(annotation: dict, markdown: str | None):
+    """Fill the source snapshot of an annotation saved before it was captured.
+
+    The result is only returned, never stored, and only when the Markdown is still
+    the text the annotation was made on.
+    """
+    if (
+        annotation["source_text"] is None
+        and markdown is not None
+        and content_hash(markdown) == annotation["content_hash"]
+    ):
+        annotation["source_text"], annotation["source_context"] = source_snapshot(
+            markdown, annotation["start_line"], annotation["end_line"]
+        )
+    return annotation
+
+
 def list_session_annotations(database_path: Path, profile: str, session_id: str):
     initialize(database_path)
     with closing(connect(database_path)) as connection:
@@ -37,10 +55,38 @@ def list_session_annotations(database_path: Path, profile: str, session_id: str)
             """,
             (profile, session_id),
         ).fetchall()
-    return [_row_dict(row) for row in rows]
+        annotations = [_row_dict(row) for row in rows]
+        legacy = sorted(
+            {
+                item["message_index"]
+                for item in annotations
+                if item["source_text"] is None
+            }
+        )
+        markdown_by_message = {}
+        if legacy:
+            placeholders = ",".join("?" for _ in legacy)
+            markdown_by_message = {
+                row["message_index"]: row["markdown"]
+                for row in connection.execute(
+                    f"""
+                    SELECT message_index, markdown FROM messages
+                    WHERE profile = ? AND session_id = ?
+                      AND message_index IN ({placeholders})
+                    """,
+                    (profile, session_id, *legacy),
+                )
+            }
+    return [
+        _with_legacy_source(item, markdown_by_message.get(item["message_index"]))
+        for item in annotations
+    ]
 
 
-def list_document_annotations(database_path: Path, document_id: str):
+def list_document_annotations(
+    database_path: Path, document_id: str, markdown: str | None = None
+):
+    """List a document's annotations; markdown is its current content, if known."""
     initialize(database_path)
     with closing(connect(database_path)) as connection:
         rows = connection.execute(
@@ -51,7 +97,7 @@ def list_document_annotations(database_path: Path, document_id: str):
             """,
             (document_id,),
         ).fetchall()
-    return [_row_dict(row) for row in rows]
+    return [_with_legacy_source(_row_dict(row), markdown) for row in rows]
 
 
 def get_message_markdown(
@@ -99,6 +145,7 @@ def create_message_annotation(
         prefix=prefix,
         suffix=suffix,
         source_hash=content_hash(markdown),
+        snapshot=source_snapshot(markdown, start_line, end_line),
         note=note,
     )
 
@@ -130,6 +177,7 @@ def create_document_annotation(
         prefix=prefix,
         suffix=suffix,
         source_hash=content_hash(markdown),
+        snapshot=source_snapshot(markdown, start_line, end_line),
         note=note,
     )
 
@@ -149,6 +197,7 @@ def _insert_annotation(
     prefix: str,
     suffix: str,
     source_hash: str,
+    snapshot: tuple[str, str],
     note: str,
 ):
     initialize(database_path)
@@ -161,8 +210,8 @@ def _insert_annotation(
                     target_type, profile, session_id, message_index,
                     document_id, document_path, start_line, end_line,
                     selected_text, prefix, suffix, content_hash, note,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_text, source_context, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     target_type,
@@ -178,6 +227,7 @@ def _insert_annotation(
                     suffix,
                     source_hash,
                     note,
+                    *snapshot,
                     now,
                     now,
                 ),

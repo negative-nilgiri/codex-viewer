@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from session_viewer_backend.database import connect, initialize
+from session_viewer_backend.database import SCHEMA_VERSION, connect, initialize
 from session_viewer_backend.discovery import discover_sessions, load_session_metadata
 from session_viewer_backend.repository import get_messages, list_sessions
 from session_viewer_backend.sources import SourceDefinition
@@ -198,5 +198,52 @@ def test_initialize_migrates_a_version_one_catalog(tmp_path):
         columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(sessions)")
         }
-    assert version == 4
+    assert version == SCHEMA_VERSION
     assert {"source_present", "last_discovered_at", "title_override"} <= columns
+
+
+def test_initialize_adds_annotation_source_columns_to_a_version_four_database(tmp_path):
+    database = tmp_path / "viewer.sqlite3"
+    initialize(database)
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            DROP TABLE annotations;
+            CREATE TABLE annotations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_type TEXT NOT NULL CHECK (target_type IN ('message', 'document')),
+                profile TEXT,
+                session_id TEXT,
+                message_index INTEGER,
+                document_id TEXT,
+                document_path TEXT,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                selected_text TEXT NOT NULL,
+                prefix TEXT NOT NULL DEFAULT '',
+                suffix TEXT NOT NULL DEFAULT '',
+                content_hash TEXT NOT NULL,
+                note TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO annotations(
+                target_type, document_id, document_path, start_line, end_line,
+                selected_text, content_hash, note, created_at, updated_at
+            ) VALUES (
+                'document', 'doc', 'doc.md', 1, 1, 'text', 'hash', 'keep me', 'then', 'then'
+            );
+            UPDATE schema_info SET version = 4;
+            """
+        )
+
+    initialize(database)
+    initialize(database)
+
+    with connect(database) as connection:
+        version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
+        row = connection.execute("SELECT * FROM annotations").fetchone()
+    assert version == SCHEMA_VERSION == 5
+    assert row["note"] == "keep me"
+    assert row["source_text"] is None
+    assert row["source_context"] is None

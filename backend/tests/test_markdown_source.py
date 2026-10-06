@@ -1,0 +1,101 @@
+import pytest
+
+from session_viewer_backend.markdown_source import (
+    heading_chain,
+    source_snapshot,
+    split_lines,
+)
+
+
+def chain(markdown: str, line: int):
+    return heading_chain(split_lines(markdown), line)
+
+
+def test_chain_is_the_headings_above_the_passage():
+    markdown = "## Heading\n### Subheading\nsome-text\n"
+    assert chain(markdown, 3) == ["## Heading", "### Subheading"]
+
+
+def test_chain_has_no_headings_before_the_first_one():
+    assert chain("intro\n\n## Later\n", 1) == []
+
+
+def test_a_new_sibling_or_parent_replaces_deeper_headings():
+    markdown = "## A\n### A1\ntext\n## B\ntext2\n# Top\ntext3\n"
+    assert chain(markdown, 3) == ["## A", "### A1"]
+    assert chain(markdown, 5) == ["## B"]
+    assert chain(markdown, 7) == ["# Top"]
+
+
+def test_skipped_levels_are_kept_as_written():
+    assert chain("# A\n#### D\ntext\n", 3) == ["# A", "#### D"]
+
+
+def test_an_annotated_heading_is_not_repeated_and_closes_its_siblings():
+    markdown = "# Title\n## A\n### A1\ntext\n## B\nbody\n"
+    assert chain(markdown, 5) == ["# Title"]
+    assert chain(markdown, 3) == ["# Title", "## A"]
+
+
+def test_hashes_inside_fenced_code_are_not_headings():
+    markdown = "## Real\n```python\n# comment\n## also code\n```\ntext\n"
+    assert chain(markdown, 6) == ["## Real"]
+    assert chain(markdown, 4) == ["## Real"]
+
+
+def test_a_longer_closing_fence_and_tildes_close_a_fence():
+    markdown = "## Real\n~~~\n# code\n~~~~\n### After\ntext\n"
+    assert chain(markdown, 6) == ["## Real", "### After"]
+
+
+def test_closing_hashes_and_extra_spaces_are_normalised():
+    assert chain("##   Title with   gaps ##  \ntext\n", 2) == ["## Title with   gaps"]
+
+
+def test_empty_headings_are_ignored():
+    assert chain("## Real\n##\ntext\n", 3) == ["## Real"]
+
+
+def test_setext_headings_are_reported_in_atx_form():
+    markdown = "Title\n=====\n\nSub\n---\nbody\n"
+    assert chain(markdown, 6) == ["# Title", "## Sub"]
+
+
+def test_a_thematic_break_after_a_list_item_or_quote_is_not_a_heading():
+    assert chain("## A\n- item\n---\ntext\n", 4) == ["## A"]
+    assert chain("## A\n> quote\n---\ntext\n", 4) == ["## A"]
+
+
+def test_windows_and_old_mac_line_endings_count_like_unix_ones():
+    assert chain("## A\r\ntext\r\n", 2) == ["## A"]
+    assert chain("## A\rtext\r", 2) == ["## A"]
+
+
+def test_unicode_line_separators_do_not_shift_line_numbers():
+    markdown = "## A\n\u2028still line two\n### B\ntext\n"
+    assert chain(markdown, 4) == ["## A", "### B"]
+
+
+def test_a_start_line_past_the_end_uses_every_heading():
+    assert chain("## A\ntext\n", 99) == ["## A"]
+
+
+def test_snapshot_returns_the_source_lines_and_their_headings():
+    markdown = "## Heading\n### Subheading\nfirst **bold** line\nsecond line\nthird\n"
+    assert source_snapshot(markdown, 3, 4) == (
+        "first **bold** line\nsecond line",
+        "## Heading\n### Subheading",
+    )
+
+
+def test_snapshot_context_is_empty_without_headings():
+    assert source_snapshot("plain\n", 1, 1) == ("plain", "")
+
+
+@pytest.mark.parametrize(
+    "markdown",
+    ["$$\nx = \\frac{1}{2}\n$$\n", "```python\nprint(1)\n```\n"],
+)
+def test_snapshot_keeps_math_and_code_exactly(markdown):
+    text, _ = source_snapshot(markdown, 1, 3)
+    assert text == markdown.rstrip("\n")
