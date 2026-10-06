@@ -1462,6 +1462,11 @@ button:disabled {
   cursor: pointer;
 }
 
+.annotation-group-select {
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
 .annotation-group + .annotation-group {
   margin-top: 0.9rem;
 }

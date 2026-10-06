@@ -78,6 +78,18 @@ export function AnnotationsPanel({
     })
   }
 
+  function toggleGroup(items: Annotation[]) {
+    setSelected((current) => {
+      const next = new Set(current)
+      const everySelected = items.every((item) => next.has(item.id))
+      for (const item of items) {
+        if (everySelected) next.delete(item.id)
+        else next.add(item.id)
+      }
+      return next
+    })
+  }
+
   async function save(event: FormEvent, annotation: Annotation) {
     event.preventDefault()
     if (!draft.trim() || working !== null) return
@@ -186,116 +198,131 @@ export function AnnotationsPanel({
             Select text in the rendered Markdown to add an annotation.
           </p>
         )}
-        {groupAnnotations(annotations).map((group) => (
-          <section className="annotation-group" key={group.key}>
-            <header>
-              <strong>{group.label}</strong>
-              <CopyButton
-                idleLabel="Copy group"
-                label={`Copy the annotations of ${group.label} as Markdown`}
-                text={formatAnnotations(group.items)}
-              />
-            </header>
-            {group.items.map((annotation) => {
-              const parts = annotationParts(annotation)
-              return (
-                <article className="annotation-item" key={annotation.id}>
-                  <div className="annotation-item-bar">
-                    <label className="annotation-select">
-                      <input
-                        checked={selected.has(annotation.id)}
-                        onChange={() => toggleSelected(annotation.id)}
-                        type="checkbox"
-                      />
-                      <span>{lineRange(annotation)}</span>
-                    </label>
-                    <div className="annotation-item-actions">
-                      <button
-                        onClick={() => onNavigate(annotation)}
-                        title="Jump to annotated passage"
-                        type="button"
-                      >
-                        Jump
-                      </button>
-                      <CopyButton
-                        label="Copy annotation as Markdown"
-                        text={formatAnnotations([annotation])}
-                      />
-                      <button
-                        aria-label="Edit annotation"
-                        onClick={() => {
-                          setDraft(annotation.note)
-                          setEditing(annotation.id)
-                        }}
-                        title="Edit annotation"
-                        type="button"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        aria-label="Delete annotation"
-                        disabled={working !== null || deleting}
-                        onClick={() => void remove(annotation)}
-                        title="Delete annotation"
-                        type="button"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                  <div className="annotation-preview">
-                    {parts.headings.length > 0 && (
-                      <div className="annotation-headings">
-                        {parts.headings.map((heading, index) => (
-                          <div key={`${index}-${heading}`}>{heading}</div>
-                        ))}
-                      </div>
-                    )}
-                    {parts.quote.kind === 'code' ? (
-                      <pre className="annotation-quote annotation-quote--code">
-                        <code>{parts.quote.text}</code>
-                      </pre>
-                    ) : (
-                      <blockquote
-                        className="annotation-quote"
-                        title={
-                          parts.quote.rendered
-                            ? 'Rendered text: the Markdown source was not saved for this annotation'
-                            : undefined
-                        }
-                      >
-                        {parts.quote.text}
-                      </blockquote>
-                    )}
-                    {editing === annotation.id ? (
-                      <form onSubmit={(event) => void save(event, annotation)}>
-                        <textarea
-                          aria-label={`Edit annotation ${annotation.id}`}
-                          autoFocus
-                          className="annotation-panel-textarea"
-                          maxLength={20_000}
-                          onChange={(event) => setDraft(event.target.value)}
-                          rows={3}
-                          value={draft}
+        {groupAnnotations(annotations).map((group) => {
+          const selectedInGroup = group.items.filter((item) => selected.has(item.id)).length
+          const groupSelected = selectedInGroup === group.items.length
+          return (
+            <section className="annotation-group" key={group.key}>
+              <header>
+                <label className="annotation-select annotation-group-select">
+                  <input
+                    aria-label={`Select all annotations of ${group.label}`}
+                    checked={groupSelected}
+                    onChange={() => toggleGroup(group.items)}
+                    ref={(input) => {
+                      if (input) input.indeterminate = !groupSelected && selectedInGroup > 0
+                    }}
+                    type="checkbox"
+                  />
+                  <strong>{group.label}</strong>
+                </label>
+                <CopyButton
+                  idleLabel="Copy group"
+                  label={`Copy the annotations of ${group.label} as Markdown`}
+                  text={formatAnnotations(group.items)}
+                />
+              </header>
+              {group.items.map((annotation) => {
+                const parts = annotationParts(annotation)
+                return (
+                  <article className="annotation-item" key={annotation.id}>
+                    <div className="annotation-item-bar">
+                      <label className="annotation-select">
+                        <input
+                          checked={selected.has(annotation.id)}
+                          onChange={() => toggleSelected(annotation.id)}
+                          type="checkbox"
                         />
-                        <div className="annotation-item-actions">
-                          <button onClick={() => setEditing(null)} type="button">
-                            Cancel
-                          </button>
-                          <button disabled={working !== null || !draft.trim()} type="submit">
-                            {working === annotation.id ? 'Saving…' : 'Save'}
-                          </button>
+                        <span>{lineRange(annotation)}</span>
+                      </label>
+                      <div className="annotation-item-actions">
+                        <button
+                          onClick={() => onNavigate(annotation)}
+                          title="Jump to annotated passage"
+                          type="button"
+                        >
+                          Jump
+                        </button>
+                        <CopyButton
+                          label="Copy annotation as Markdown"
+                          text={formatAnnotations([annotation])}
+                        />
+                        <button
+                          aria-label="Edit annotation"
+                          onClick={() => {
+                            setDraft(annotation.note)
+                            setEditing(annotation.id)
+                          }}
+                          title="Edit annotation"
+                          type="button"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          aria-label="Delete annotation"
+                          disabled={working !== null || deleting}
+                          onClick={() => void remove(annotation)}
+                          title="Delete annotation"
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <div className="annotation-preview">
+                      {parts.headings.length > 0 && (
+                        <div className="annotation-headings">
+                          {parts.headings.map((heading, index) => (
+                            <div key={`${index}-${heading}`}>{heading}</div>
+                          ))}
                         </div>
-                      </form>
-                    ) : (
-                      <p className="annotation-note">{parts.note}</p>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
-          </section>
-        ))}
+                      )}
+                      {parts.quote.kind === 'code' ? (
+                        <pre className="annotation-quote annotation-quote--code">
+                          <code>{parts.quote.text}</code>
+                        </pre>
+                      ) : (
+                        <blockquote
+                          className="annotation-quote"
+                          title={
+                            parts.quote.rendered
+                              ? 'Rendered text: the Markdown source was not saved for this annotation'
+                              : undefined
+                          }
+                        >
+                          {parts.quote.text}
+                        </blockquote>
+                      )}
+                      {editing === annotation.id ? (
+                        <form onSubmit={(event) => void save(event, annotation)}>
+                          <textarea
+                            aria-label={`Edit annotation ${annotation.id}`}
+                            autoFocus
+                            className="annotation-panel-textarea"
+                            maxLength={20_000}
+                            onChange={(event) => setDraft(event.target.value)}
+                            rows={3}
+                            value={draft}
+                          />
+                          <div className="annotation-item-actions">
+                            <button onClick={() => setEditing(null)} type="button">
+                              Cancel
+                            </button>
+                            <button disabled={working !== null || !draft.trim()} type="submit">
+                              {working === annotation.id ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <p className="annotation-note">{parts.note}</p>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </section>
+          )
+        })}
       </div>
     </aside>
   )

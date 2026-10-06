@@ -436,8 +436,10 @@ exported as durable snapshots from the viewer.
   or document, grouped by message, with the full quotation and the headings it
   sits under. **Jump** loads and expands the message when necessary, then jumps
   to and briefly emphasizes the annotated passage. Notes can be edited or deleted
-  in place; to discard many at once, tick them and press **Delete selected**,
-  which asks for confirmation once. See
+  in place. Tick notes individually, or tick a message's checkbox to select all
+  of its notes at once (two messages are two clicks); **Copy selected** and
+  **Delete selected** act on the whole selection, and deleting asks for
+  confirmation once. See
   [Copy annotations for an agent](#copy-annotations-for-an-agent).
 - **Export backup** atomically overwrites `bookmarks/<session-id>.json` with the
   current list. **Restore backup** confirms and then replaces the browser list
