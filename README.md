@@ -15,6 +15,9 @@ The application has four small pieces:
 Markdown documents are read directly from a separate directory. They are not
 copied into SQLite or converted into fake conversations.
 
+Contributors and coding agents: see [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)
+for where everything lives.
+
 Transcript files are mounted read-only and remain the source of truth. The
 viewer never modifies them. Conversation archives created explicitly from the
 UI or CLI use a separate writable directory.
