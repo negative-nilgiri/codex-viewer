@@ -149,7 +149,8 @@ state is React `useState` plus `localStorage`.
 | `rehypeDisplayMathPosition.ts` | Rehype plugin (between `rehype-raw` and `rehype-katex`) that wraps display math in a `data-source-*-line` element, because rehype-katex drops the source position and the equation could not be annotated. |
 | `components/MarkdownRenderer.tsx` | The shared Markdown pipeline (remark-gfm, remark-math, rehype-raw, rehype-katex, rehype-highlight), custom element components that stamp `data-source-start-line` / `data-source-end-line`, and `MarkdownOutline`. |
 | `components/AnnotationSurface.tsx` | Text selection capture, line refinement, annotation anchoring and highlighting (CSS Custom Highlight API), floating Annotate button and editor. |
-| `components/AnnotationsMenu.tsx` | The Annotations dropdown: list, jump, edit, delete. |
+| `components/AnnotationsPanel.tsx` | The Annotations toggle button and side panel: grouped list, selection, jump, edit, delete, and the copy buttons. |
+| `annotationCopy.ts` | Pure functions that turn an annotation into the Markdown that is copied (label, headings, quote, note). The panel renders the same parts, so what you see is what is copied. |
 | `components/MermaidDiagram.tsx` | Lazy-loaded Mermaid rendering, Raw toggle, legend built from `classDef`. |
 | `components/CopyButton.tsx` | Clipboard copy with fallback. |
 | `App.css`, `index.css` | All styling (plain CSS, no framework). |
@@ -194,7 +195,8 @@ source copy of a session (original and archive) shares them.
 | Add or change an API endpoint | `api.py`, then `frontend/src/api.ts`, then a test in `backend/tests/test_api.py` |
 | Change the database schema | `database.py` (schema, version, migration) |
 | Change annotation storage or validation | `annotations.py`, `api.py` models, `database.py` |
-| Change annotation anchoring or UI | `components/AnnotationSurface.tsx`, `AnnotationsMenu.tsx` |
+| Change what an annotation copies as | `annotationCopy.ts` (and the snapshot columns in `markdown_source.py`) |
+| Change annotation anchoring or UI | `components/AnnotationSurface.tsx`, `components/AnnotationsPanel.tsx` |
 | Change Markdown rendering (math, code, tables, links) | `components/MarkdownRenderer.tsx`, `markdown.ts` |
 | Change Mermaid behavior | `components/MermaidDiagram.tsx` |
 | Change the transcript view, search, bookmarks, Watch | `Transcript` in `App.tsx` |

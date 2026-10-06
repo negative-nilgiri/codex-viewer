@@ -23,7 +23,7 @@ import {
   type Message,
   type SessionSummary,
 } from './api'
-import { AnnotationsMenu } from './components/AnnotationsMenu'
+import { AnnotationsPanel, AnnotationsToggle } from './components/AnnotationsPanel'
 import { CopyButton } from './components/CopyButton'
 import { DocumentViewer } from './DocumentViewer'
 import { MessageCard } from './MessageCard'
@@ -237,6 +237,7 @@ function Transcript({
   const [bookmarkOperation, setBookmarkOperation] = useState<'export' | 'restore' | null>(null)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [focusAnnotationId, setFocusAnnotationId] = useState<number | null>(null)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [foldState, setFoldState] = useState<FoldState>(() => loadFoldState(session))
   const [watching, setWatching] = useState(
     () => localStorage.getItem(watchStorageKey(session)) === 'true',
@@ -1019,11 +1020,10 @@ function Transcript({
                 </div>
               </div>
             </details>
-            <AnnotationsMenu
-              annotations={annotations}
-              onDelete={removeAnnotation}
-              onNavigate={revealAnnotation}
-              onUpdate={editAnnotation}
+            <AnnotationsToggle
+              count={annotations.length}
+              onToggle={() => setAnnotationsOpen((open) => !open)}
+              open={annotationsOpen}
             />
             <button
               onClick={() => setFoldState({ defaultCollapsed: true, exceptions: new Set() })}
@@ -1070,85 +1070,96 @@ function Transcript({
       {error && <div className="status status--error">{error}</div>}
       {notice && <div className="status">{notice}</div>}
 
-      <div className="virtual-transcript">
-        {total ? (
-          <Virtuoso
-            ref={virtuoso}
-            totalCount={total}
-            atBottomStateChange={(atBottom) => {
-              atLiveTail.current = atBottom
-            }}
-            rangeChanged={loadVisibleRange}
-            increaseViewportBy={{ top: 500, bottom: 800 }}
-            defaultItemHeight={180}
-            computeItemKey={(index) => `${sessionIdentity(session)}:message:${index + 1}`}
-            itemContent={(index) => {
-              const message = messageAt(index)
-              const start = blockStartFor(index)
-              const status = statuses.get(start)
-              if (!message) {
-                return (
-                  <div className="message-slot">
-                    <div className={`message-placeholder${status === 'error' ? ' message-placeholder--error' : ''}`}>
-                      {status === 'error' ? (
-                        <>
-                          <span>Messages {start + 1}–{Math.min(start + BLOCK_SIZE, total)} failed to load.</span>
-                          <button onClick={() => loadBlock(start, true)} type="button">Retry</button>
-                        </>
-                      ) : (
-                        <span>Loading message {index + 1}…</span>
-                      )}
+      <div className="transcript-body">
+        <div className="virtual-transcript">
+          {total ? (
+            <Virtuoso
+              ref={virtuoso}
+              totalCount={total}
+              atBottomStateChange={(atBottom) => {
+                atLiveTail.current = atBottom
+              }}
+              rangeChanged={loadVisibleRange}
+              increaseViewportBy={{ top: 500, bottom: 800 }}
+              defaultItemHeight={180}
+              computeItemKey={(index) => `${sessionIdentity(session)}:message:${index + 1}`}
+              itemContent={(index) => {
+                const message = messageAt(index)
+                const start = blockStartFor(index)
+                const status = statuses.get(start)
+                if (!message) {
+                  return (
+                    <div className="message-slot">
+                      <div className={`message-placeholder${status === 'error' ? ' message-placeholder--error' : ''}`}>
+                        {status === 'error' ? (
+                          <>
+                            <span>Messages {start + 1}–{Math.min(start + BLOCK_SIZE, total)} failed to load.</span>
+                            <button onClick={() => loadBlock(start, true)} type="button">Retry</button>
+                          </>
+                        ) : (
+                          <span>Loading message {index + 1}…</span>
+                        )}
+                      </div>
                     </div>
+                  )
+                }
+                const collapsed =
+                  foldState.defaultCollapsed !== foldState.exceptions.has(message.message_index)
+                return (
+                  <div className={`message-slot${searchTarget === message.message_index ? ' message-slot--search-target' : ''}`}>
+                    <MessageCard
+                      annotations={annotations.filter(
+                        (annotation) =>
+                          annotation.message_index === message.message_index,
+                      )}
+                      bookmarked={bookmarks.some(
+                        (bookmark) => bookmark.messageIndex === message.message_index,
+                      )}
+                      collapsed={collapsed}
+                      focusAnnotationId={
+                        annotations.some(
+                          (annotation) =>
+                            annotation.id === focusAnnotationId &&
+                            annotation.message_index === message.message_index,
+                        )
+                          ? focusAnnotationId
+                          : null
+                      }
+                      message={message}
+                      onAnnotationFocused={annotationFocused}
+                      onAnnotate={annotateMessage}
+                      onBookmark={toggleBookmark}
+                      onToggle={toggleMessage}
+                    />
                   </div>
                 )
-              }
-              const collapsed =
-                foldState.defaultCollapsed !== foldState.exceptions.has(message.message_index)
-              return (
-                <div className={`message-slot${searchTarget === message.message_index ? ' message-slot--search-target' : ''}`}>
-                  <MessageCard
-                    annotations={annotations.filter(
-                      (annotation) =>
-                        annotation.message_index === message.message_index,
-                    )}
-                    bookmarked={bookmarks.some(
-                      (bookmark) => bookmark.messageIndex === message.message_index,
-                    )}
-                    collapsed={collapsed}
-                    focusAnnotationId={
-                      annotations.some(
-                        (annotation) =>
-                          annotation.id === focusAnnotationId &&
-                          annotation.message_index === message.message_index,
-                      )
-                        ? focusAnnotationId
-                        : null
-                    }
-                    message={message}
-                    onAnnotationFocused={annotationFocused}
-                    onAnnotate={annotateMessage}
-                    onBookmark={toggleBookmark}
-                    onToggle={toggleMessage}
-                  />
-                </div>
-              )
-            }}
+              }}
+            />
+          ) : !session.source_present ? (
+            <div className="empty-transcript">
+              <h2>Source unavailable</h2>
+              <p>The indexed catalog entry remains, but its rollout is not currently mounted.</p>
+            </div>
+          ) : !session.indexed ? (
+            <div className="empty-transcript">
+              <h2>Session not indexed</h2>
+              <p>Use <strong>Index session</strong> to import its visible messages on demand.</p>
+            </div>
+          ) : (
+            <div className="empty-transcript">
+              <h2>No visible messages</h2>
+              <p>This transcript has not produced a user or assistant message yet.</p>
+            </div>
+          )}
+        </div>
+        {annotationsOpen && (
+          <AnnotationsPanel
+            annotations={annotations}
+            onClose={() => setAnnotationsOpen(false)}
+            onDelete={removeAnnotation}
+            onNavigate={revealAnnotation}
+            onUpdate={editAnnotation}
           />
-        ) : !session.source_present ? (
-          <div className="empty-transcript">
-            <h2>Source unavailable</h2>
-            <p>The indexed catalog entry remains, but its rollout is not currently mounted.</p>
-          </div>
-        ) : !session.indexed ? (
-          <div className="empty-transcript">
-            <h2>Session not indexed</h2>
-            <p>Use <strong>Index session</strong> to import its visible messages on demand.</p>
-          </div>
-        ) : (
-          <div className="empty-transcript">
-            <h2>No visible messages</h2>
-            <p>This transcript has not produced a user or assistant message yet.</p>
-          </div>
         )}
       </div>
     </>

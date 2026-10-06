@@ -9,7 +9,7 @@ import {
   type AnnotationDraft,
   type DocumentSummary,
 } from './api'
-import { AnnotationsMenu } from './components/AnnotationsMenu'
+import { AnnotationsPanel, AnnotationsToggle } from './components/AnnotationsPanel'
 import { CopyButton } from './components/CopyButton'
 import {
   MarkdownOutline,
@@ -36,6 +36,7 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [focusAnnotationId, setFocusAnnotationId] = useState<number | null>(null)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scope = `document-${document.id}`
   const headings = useMemo(
@@ -140,11 +141,10 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
               {outlineOpen ? 'Hide outline' : 'Outline'}
             </button>
           )}
-          <AnnotationsMenu
-            annotations={annotations}
-            onDelete={removeAnnotation}
-            onNavigate={(annotation) => setFocusAnnotationId(annotation.id)}
-            onUpdate={editAnnotation}
+          <AnnotationsToggle
+            count={annotations.length}
+            onToggle={() => setAnnotationsOpen((open) => !open)}
+            open={annotationsOpen}
           />
           <CopyButton
             disabled={markdown === null}
@@ -157,44 +157,55 @@ export function DocumentViewer({ document }: { document: DocumentSummary }) {
         </div>
       </header>
       {error && <div className="status status--error">{error}</div>}
-      <div className="document-scroll" ref={scrollRef}>
-        {loading ? (
-          <div className="empty-transcript">Loading Markdown document…</div>
-        ) : markdown !== null ? (
-          <article className="document-page markdown-body">
-            <div className="message-markdown-content">
-              {outlineOpen && headings.length >= 2 && (
-                <MarkdownOutline
+      <div className="transcript-body">
+        <div className="document-scroll" ref={scrollRef}>
+          {loading ? (
+            <div className="empty-transcript">Loading Markdown document…</div>
+          ) : markdown !== null ? (
+            <article className="document-page markdown-body">
+              <div className="message-markdown-content">
+                {outlineOpen && headings.length >= 2 && (
+                  <MarkdownOutline
+                    headings={headings}
+                    label="Document outline"
+                    onNavigate={(heading) => {
+                      setOutlineOpen(false)
+                      scrollToHeadingAfterLayout(heading.id)
+                    }}
+                    title="In this document"
+                  />
+                )}
+                <MarkdownRenderer
+                  annotations={annotations}
+                  focusAnnotationId={focusAnnotationId}
                   headings={headings}
-                  label="Document outline"
-                  onNavigate={(heading) => {
-                    setOutlineOpen(false)
-                    scrollToHeadingAfterLayout(heading.id)
-                  }}
-                  title="In this document"
+                  markdown={markdown}
+                  onAnnotationFocused={annotationFocused}
+                  onCreateAnnotation={annotate}
+                  scope={scope}
                 />
-              )}
-              <MarkdownRenderer
-                annotations={annotations}
-                focusAnnotationId={focusAnnotationId}
-                headings={headings}
-                markdown={markdown}
-                onAnnotationFocused={annotationFocused}
-                onCreateAnnotation={annotate}
-                scope={scope}
-              />
-            </div>
-            <div className="message-back-to-top">
-              <button
-                onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                type="button"
-              >
-                ↑ Top of document
-              </button>
-            </div>
-          </article>
-        ) : (
-          <div className="empty-transcript">The document could not be loaded.</div>
+              </div>
+              <div className="message-back-to-top">
+                <button
+                  onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  type="button"
+                >
+                  ↑ Top of document
+                </button>
+              </div>
+            </article>
+          ) : (
+            <div className="empty-transcript">The document could not be loaded.</div>
+          )}
+        </div>
+        {annotationsOpen && (
+          <AnnotationsPanel
+            annotations={annotations}
+            onClose={() => setAnnotationsOpen(false)}
+            onDelete={removeAnnotation}
+            onNavigate={(annotation) => setFocusAnnotationId(annotation.id)}
+            onUpdate={editAnnotation}
+          />
         )}
       </div>
     </>

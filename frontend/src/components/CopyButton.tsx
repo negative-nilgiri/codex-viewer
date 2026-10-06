@@ -20,11 +20,13 @@ async function copyText(text: string) {
 export function CopyButton({
   className = '',
   disabled = false,
+  idleLabel = 'Copy',
   label,
   text,
 }: {
   className?: string
   disabled?: boolean
+  idleLabel?: string
   label: string
   text: string
 }) {
@@ -49,7 +51,7 @@ export function CopyButton({
     resetTimer.current = setTimeout(() => setState('idle'), 1600)
   }
 
-  const visibleLabel = state === 'copied' ? 'Copied' : state === 'error' ? 'Copy failed' : 'Copy'
+  const visibleLabel = state === 'copied' ? 'Copied' : state === 'error' ? 'Copy failed' : idleLabel
 
   return (
     <button

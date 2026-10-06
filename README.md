@@ -432,9 +432,11 @@ exported as durable snapshots from the viewer.
   the action disappears on outside click, Escape, or scrolling. The saved
   annotation records the exact quotation, surrounding text, and its Markdown
   source lines without changing the JSONL or `.md` file.
-- **Annotations** lists notes for the current session or document. Selecting a
-  note loads and expands its message when necessary, then jumps to and briefly
-  emphasizes the annotated passage. Notes can be edited or deleted in place.
+- **Annotations** opens a side panel listing the notes for the current session
+  or document, grouped by message, with the full quotation and the headings it
+  sits under. **Jump** loads and expands the message when necessary, then jumps
+  to and briefly emphasizes the annotated passage. Notes can be edited or deleted
+  in place. See [Copy annotations for an agent](#copy-annotations-for-an-agent).
 - **Export backup** atomically overwrites `bookmarks/<session-id>.json` with the
   current list. **Restore backup** confirms and then replaces the browser list
   directly; it does not scan or synchronize the transcript.
@@ -461,6 +463,35 @@ preferences are stored in browser local storage. Bookmark backups are readable,
 versioned JSON files in the gitignored `bookmarks/` directory. Annotations are
 stored in SQLite so they are shared across browsers and survive session resyncs.
 None of these mechanisms modifies transcript or Markdown source files.
+
+## Copy annotations for an agent
+
+Each annotation can be copied as Markdown to paste into an agent for a
+follow-up. **Copy** on a note copies that one; **Copy group** copies every note
+on a message; tick the checkboxes and use **Copy selected**, or use **Copy all**.
+One annotation is copied as:
+
+````markdown
+**Message #12**
+## Heading
+### Subheading
+> the quoted passage
+
+your note
+````
+
+- The first line names the message (`Message #N`) or document. The heading lines
+  are the headings the passage sits under, in order, taken from the Markdown
+  source. Several annotations are separated by `---` and each repeats its own
+  headings.
+- The quotation is the Markdown source, not the rendered text, so formulas and
+  code survive. Prose you selected is quoted exactly as selected. A selection
+  that includes math, bold, links, or other inline formatting is quoted as its
+  whole source line or block. Math is kept as `$$ ... $$`. A selection inside a
+  fenced code block is copied as a fenced block with its language.
+- Source and headings are saved when the annotation is created. Annotations saved
+  earlier get them filled in on read while the message or document is unchanged;
+  otherwise the panel shows and copies the rendered text.
 
 ## Markdown rendering
 
