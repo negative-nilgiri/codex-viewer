@@ -1,7 +1,7 @@
 import re
 
 
-FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 ATX_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*)|[ \t]*)$")
 SETEXT_UNDERLINE_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 CLOSING_HASHES_RE = re.compile(r"[ \t]+#+[ \t]*$")
@@ -35,25 +35,34 @@ def _heading_at(lines: list[str], index: int):
     return None
 
 
-def heading_chain(lines: list[str], start_line: int):
-    """Headings in effect at start_line, outermost first, as ATX heading lines.
+def scan_context(lines: list[str], start_line: int):
+    """Return (headings, fence_language) for the passage starting at start_line.
 
-    The headings are ancestors of the passage: for "## A", "### B", text the
-    chain at the text is ["## A", "### B"]. Headings inside fenced code are
-    ignored. A heading that starts on start_line is the annotated text itself, so
-    it is excluded, along with the siblings and deeper headings it closes.
+    headings are the headings in effect there, outermost first, as ATX lines. They
+    are ancestors of the passage: for "## A", "### B", text the chain at the text
+    is ["## A", "### B"]. Headings inside fenced code are ignored. A heading that
+    starts on start_line is the annotated text itself, so it is excluded, along
+    with the siblings and deeper headings it closes.
+
+    fence_language is None unless start_line is inside a fenced code block that
+    opened on an earlier line; then it is the first word of the fence's info
+    string ("" when it has none).
     """
     stack: list[tuple[int, str, int]] = []
     fence = None
+    inside = None
     index = 0
     last = min(start_line, len(lines))
     while index < last:
+        if index + 1 == start_line:
+            inside = fence
         fence_match = FENCE_RE.match(lines[index])
         if fence_match:
             marker = fence_match.group(1)
+            info = fence_match.group(2).strip()
             if fence is None:
-                fence = (marker[0], len(marker))
-            elif marker[0] == fence[0] and len(marker) >= fence[1]:
+                fence = (marker[0], len(marker), info.split()[0] if info else "")
+            elif marker[0] == fence[0] and len(marker) >= fence[1] and not info:
                 fence = None
             index += 1
             continue
@@ -69,15 +78,26 @@ def heading_chain(lines: list[str], start_line: int):
             stack.pop()
         stack.append((depth, text, index + 1))
         index += used
+    if start_line > len(lines):
+        inside = fence
     if stack and stack[-1][2] == start_line:
         stack.pop()
-    return [f"{'#' * depth} {text}" for depth, text, _ in stack]
+    return (
+        [f"{'#' * depth} {text}" for depth, text, _ in stack],
+        None if inside is None else inside[2],
+    )
+
+
+def heading_chain(lines: list[str], start_line: int):
+    return scan_context(lines, start_line)[0]
 
 
 def source_snapshot(markdown: str, start_line: int, end_line: int):
-    """Return (source_text, source_context) for annotated 1-based, inclusive lines."""
+    """Return (source_text, source_context, source_fence) for 1-based, inclusive lines."""
     lines = split_lines(markdown)
+    headings, fence_language = scan_context(lines, start_line)
     return (
         "\n".join(lines[start_line - 1 : end_line]),
-        "\n".join(heading_chain(lines, start_line)),
+        "\n".join(headings),
+        fence_language,
     )

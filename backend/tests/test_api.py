@@ -341,6 +341,7 @@ def test_message_annotation_stores_source_and_heading_context(tmp_path):
         prose = client.post(path, json=annotation_payload(3, 3)).json()
         assert prose["source_text"] == "some-text with **bold**"
         assert prose["source_context"] == "## Heading\n### Subheading"
+        assert prose["source_fence"] is None
 
         equation = client.post(
             path, json=annotation_payload(5, 7, selected_text="x 1 2 garbled")
@@ -370,12 +371,13 @@ def test_document_annotation_stores_source_and_heading_context(tmp_path):
 
         assert created["source_text"] == "A sentence."
         assert created["source_context"] == "# Notes\n## Part"
+        assert created["source_fence"] is None
         assert client.get(path).json()["items"] == [created]
 
 
 def clear_source_snapshots(database_path):
     with sqlite3.connect(database_path) as connection:
-        connection.execute("UPDATE annotations SET source_text = NULL, source_context = NULL")
+        connection.execute("UPDATE annotations SET source_text = NULL, source_context = NULL, source_fence = NULL")
 
 
 def test_legacy_message_annotations_are_filled_on_read_only_while_unchanged(tmp_path):
@@ -423,3 +425,25 @@ def test_legacy_document_annotations_are_filled_from_the_current_file(tmp_path):
         document_path.write_text("# Notes\nA different sentence.\n")
         changed = client.get(path).json()["items"][0]
         assert changed["source_text"] is None
+
+
+def test_code_annotation_records_its_fence_language_and_legacy_rows_get_it_too(tmp_path):
+    message = "## Run\n```sh\nls -la\npwd\n```\n"
+    with make_client(tmp_path, messages=[message]) as client:
+        path = f"/api/sessions/codex_2/{SESSION_ID}/annotations"
+        inside = client.post(
+            path, json=annotation_payload(3, 4, selected_text="ls -la\npwd")
+        ).json()
+        whole_block = client.post(
+            path, json=annotation_payload(2, 5, selected_text="ls -la")
+        ).json()
+
+        assert inside["source_text"] == "ls -la\npwd"
+        assert inside["source_fence"] == "sh"
+        assert whole_block["source_text"].startswith("```sh")
+        assert whole_block["source_fence"] is None
+
+        clear_source_snapshots(tmp_path / "viewer.sqlite3")
+        refilled = {item["id"]: item for item in client.get(path).json()["items"]}
+        assert refilled[inside["id"]]["source_fence"] == "sh"
+        assert refilled[whole_block["id"]]["source_fence"] is None

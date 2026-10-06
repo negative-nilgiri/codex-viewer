@@ -82,7 +82,7 @@ served by uvicorn) and `cli.py` (`viewer` command, also `python -m session_viewe
 | `database.py` | SQLite schema (`SCHEMA`), `connect`, `initialize`, schema-version migration. |
 | `repository.py` | Read queries for sessions, message pages, search; title override update. |
 | `annotations.py` | Create, list, edit, delete annotations (message and document). |
-| `markdown_source.py` | Pure helpers: line splitting that matches Markdown parsers, the heading chain above a line (fence-aware, ATX and setext), and `source_snapshot` (annotated source lines plus headings). No database access. |
+| `markdown_source.py` | Pure helpers: line splitting that matches Markdown parsers, the heading chain and open code fence at a line (`scan_context`; ATX and setext headings), and `source_snapshot` (annotated source lines, headings, fence language). No database access. |
 | `archive.py` | Export indexed messages to the archive JSONL format (header, messages, SHA-256 footer). |
 | `bookmarks.py` | Read and write bookmark backup JSON files. |
 | `documents.py` | Lists and loads Markdown documents; base64url document IDs; path-escape protection. |
@@ -111,12 +111,12 @@ served by uvicorn) and `cli.py` (`viewer` command, also `python -m session_viewe
 
 The frontend's matching client functions are all in `frontend/src/api.ts`.
 
-### SQLite schema (`database.py`, `SCHEMA_VERSION = 5`)
+### SQLite schema (`database.py`, `SCHEMA_VERSION = 6`)
 
 - `sessions` — PK `(profile, session_id)`; offsets and file identity for incremental sync; `title`, `title_override`, `source_present`.
 - `messages` — PK `(profile, session_id, message_index)`; `message_index` is 1-based; FK to `sessions` with cascade delete.
 - `annotations` — `target_type` is `'message'` or `'document'` (a CHECK enforces which columns are set). **No foreign key to `messages`**, so annotations survive resyncs and rebuilds.
-  - `source_text` / `source_context` snapshot the annotated Markdown lines and the heading lines above them when the annotation is created (NULL = saved before v5). The list endpoints fill legacy rows in memory, without storing, only while `content_hash` still matches the current Markdown.
+  - `source_text` / `source_context` / `source_fence` snapshot the annotated Markdown lines, the heading lines above them, and the fenced-code language when the passage starts inside a fence, all taken when the annotation is created (NULL = saved before that column existed). The list endpoints fill legacy rows in memory, without storing, only while `content_hash` still matches the current Markdown.
 - Migrations live inline in `database.initialize`. Adding a column means updating `SCHEMA`, bumping `SCHEMA_VERSION`, and adding an upgrade branch there.
 
 ### Adapters

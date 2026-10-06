@@ -243,7 +243,34 @@ def test_initialize_adds_annotation_source_columns_to_a_version_four_database(tm
     with connect(database) as connection:
         version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
         row = connection.execute("SELECT * FROM annotations").fetchone()
-    assert version == SCHEMA_VERSION == 5
+    assert version == SCHEMA_VERSION
     assert row["note"] == "keep me"
     assert row["source_text"] is None
     assert row["source_context"] is None
+    assert row["source_fence"] is None
+
+
+def test_initialize_adds_the_source_fence_column_to_a_version_five_database(tmp_path):
+    database = tmp_path / "viewer.sqlite3"
+    initialize(database)
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            ALTER TABLE annotations DROP COLUMN source_fence;
+            UPDATE schema_info SET version = 5;
+            """
+        )
+        assert "source_fence" not in {
+            row[1] for row in connection.execute("PRAGMA table_info(annotations)")
+        }
+
+    initialize(database)
+    initialize(database)
+
+    with connect(database) as connection:
+        version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(annotations)")
+        }
+    assert version == SCHEMA_VERSION == 6
+    assert {"source_text", "source_context", "source_fence"} <= columns

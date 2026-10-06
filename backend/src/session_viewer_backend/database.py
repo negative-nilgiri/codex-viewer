@@ -3,7 +3,7 @@ from contextlib import closing
 from pathlib import Path
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS annotations (
     note TEXT NOT NULL,
     source_text TEXT,
     source_context TEXT,
+    source_fence TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK (
@@ -115,7 +116,7 @@ def initialize(database_path: Path):
                 )
             else:
                 version = row["version"]
-                if version not in {1, 2, 3, 4, SCHEMA_VERSION}:
+                if version not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
                     raise RuntimeError(
                         f"Unsupported database schema {version}; "
                         f"expected {SCHEMA_VERSION}"
@@ -154,4 +155,14 @@ def initialize(database_path: Path):
                                 f"ALTER TABLE annotations ADD COLUMN {column} TEXT"
                             )
                     version = 5
+                if version == 5:
+                    annotation_columns = {
+                        item["name"]
+                        for item in connection.execute("PRAGMA table_info(annotations)")
+                    }
+                    if "source_fence" not in annotation_columns:
+                        connection.execute(
+                            "ALTER TABLE annotations ADD COLUMN source_fence TEXT"
+                        )
+                    version = 6
                 connection.execute("UPDATE schema_info SET version = ?", (version,))

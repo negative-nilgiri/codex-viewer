@@ -38,7 +38,11 @@ def _with_legacy_source(annotation: dict, markdown: str | None):
         and markdown is not None
         and content_hash(markdown) == annotation["content_hash"]
     ):
-        annotation["source_text"], annotation["source_context"] = source_snapshot(
+        (
+            annotation["source_text"],
+            annotation["source_context"],
+            annotation["source_fence"],
+        ) = source_snapshot(
             markdown, annotation["start_line"], annotation["end_line"]
         )
     return annotation
@@ -197,7 +201,7 @@ def _insert_annotation(
     prefix: str,
     suffix: str,
     source_hash: str,
-    snapshot: tuple[str, str],
+    snapshot: tuple[str, str, str | None],
     note: str,
 ):
     initialize(database_path)
@@ -210,8 +214,8 @@ def _insert_annotation(
                     target_type, profile, session_id, message_index,
                     document_id, document_path, start_line, end_line,
                     selected_text, prefix, suffix, content_hash, note,
-                    source_text, source_context, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_text, source_context, source_fence, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     target_type,

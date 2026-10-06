@@ -2,6 +2,7 @@ import pytest
 
 from session_viewer_backend.markdown_source import (
     heading_chain,
+    scan_context,
     source_snapshot,
     split_lines,
 )
@@ -9,6 +10,10 @@ from session_viewer_backend.markdown_source import (
 
 def chain(markdown: str, line: int):
     return heading_chain(split_lines(markdown), line)
+
+
+def fence(markdown: str, line: int):
+    return scan_context(split_lines(markdown), line)[1]
 
 
 def test_chain_is_the_headings_above_the_passage():
@@ -85,11 +90,12 @@ def test_snapshot_returns_the_source_lines_and_their_headings():
     assert source_snapshot(markdown, 3, 4) == (
         "first **bold** line\nsecond line",
         "## Heading\n### Subheading",
+        None,
     )
 
 
 def test_snapshot_context_is_empty_without_headings():
-    assert source_snapshot("plain\n", 1, 1) == ("plain", "")
+    assert source_snapshot("plain\n", 1, 1) == ("plain", "", None)
 
 
 @pytest.mark.parametrize(
@@ -97,5 +103,55 @@ def test_snapshot_context_is_empty_without_headings():
     ["$$\nx = \\frac{1}{2}\n$$\n", "```python\nprint(1)\n```\n"],
 )
 def test_snapshot_keeps_math_and_code_exactly(markdown):
-    text, _ = source_snapshot(markdown, 1, 3)
+    text, _, _ = source_snapshot(markdown, 1, 3)
     assert text == markdown.rstrip("\n")
+
+
+CODE = "intro\n```python\nprint(1)\nprint(2)\n```\nafter\n"
+
+
+def test_fence_language_is_reported_for_lines_inside_a_fenced_block():
+    assert fence(CODE, 3) == "python"
+    assert fence(CODE, 4) == "python"
+
+
+def test_fence_is_none_outside_a_block_and_on_its_opening_line():
+    assert fence(CODE, 1) is None
+    assert fence(CODE, 2) is None
+    assert fence(CODE, 6) is None
+
+
+def test_the_closing_fence_line_is_still_inside_the_block():
+    assert fence(CODE, 5) == "python"
+
+
+def test_a_fence_without_a_language_reports_an_empty_string():
+    assert fence("```\ncode\n```\n", 2) == ""
+
+
+def test_only_the_first_word_of_the_info_string_is_the_language():
+    assert fence("```js title=a.js\ncode\n```\n", 2) == "js"
+
+
+def test_tilde_fences_and_longer_fences_are_tracked():
+    assert fence("~~~ruby\ncode\n~~~\ntext\n", 2) == "ruby"
+    assert fence("````md\n```\nnested\n```\n````\ntext\n", 3) == "md"
+    assert fence("````md\n```\nnested\n```\n````\ntext\n", 6) is None
+
+
+def test_a_fence_line_with_an_info_string_does_not_close_the_block():
+    assert fence("```python\n```js\ncode\n```\ntext\n", 3) == "python"
+    assert fence("```python\n```js\ncode\n```\ntext\n", 5) is None
+
+
+def test_an_unclosed_fence_stays_open_to_the_end():
+    assert fence("```sh\nls\n", 2) == "sh"
+    assert fence("```sh\nls\n", 99) == "sh"
+
+
+def test_snapshot_reports_the_fence_for_code_lines():
+    assert source_snapshot("## Run\n```sh\nls -la\n```\n", 3, 3) == (
+        "ls -la",
+        "## Run",
+        "sh",
+    )

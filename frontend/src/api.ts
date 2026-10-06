@@ -102,6 +102,9 @@ export type Annotation = {
   // null on annotations saved before this was captured, when the source changed.
   source_text: string | null
   source_context: string | null
+  // Language of the fenced code block the annotation starts inside ('' if the fence has
+  // none); null when it does not start inside a fence or was saved before this existed.
+  source_fence: string | null
   created_at: string
   updated_at: string
 }
