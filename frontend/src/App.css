@@ -994,8 +994,7 @@ button:disabled {
 }
 
 .markdown-body table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   border-collapse: collapse;
 }
 
@@ -1004,6 +1003,9 @@ button:disabled {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   text-align: left;
+  vertical-align: top;
+  /* With `anywhere`, inherited from .markdown-body, the table squeezes short columns and breaks words like "incident" mid-word. */
+  overflow-wrap: break-word;
 }
 
 .markdown-body th {
