@@ -200,7 +200,8 @@ just open    # open http://127.0.0.1:41730 in the default browser
   `127.0.0.1`.
 - `vite preview` serves the build and forwards `/api` to the API port, which is
   the job Caddy does in Docker. It accepts `*.ts.net` host names, so
-  `tailscale serve --bg --http=80 41730` reaches it from a phone on the tailnet.
+  `just tailscale-serve` (port 80 of the tailnet name → `VIEWER_PORT`) reaches
+  it from a phone on the tailnet.
 - Nothing is mounted, so every `path` in `config/sources.toml` is a host path,
   for example `/Users/me/.claude/projects`. A relative path is resolved from
   `config/`, so the archive source is `../archives`.
