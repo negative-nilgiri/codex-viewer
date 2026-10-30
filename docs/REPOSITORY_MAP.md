@@ -21,7 +21,7 @@ Markdown documents (read-only) ──────┘                   Caddy ser
 
 - Backend: Python 3.14, FastAPI, standard-library `sqlite3`, managed with `uv`.
 - Frontend: React 19 + TypeScript + Vite (React Compiler enabled), `react-virtuoso`.
-- Runtime: Docker Compose (`api` = backend, `web` = Caddy + built frontend).
+- Runtime: natively with `just serve` (uvicorn on `VIEWER_API_PORT`, `vite preview` on `VIEWER_PORT` proxying `/api`), or Docker Compose (`api` = backend, `web` = Caddy + built frontend).
 
 ## Vocabulary (the code is inconsistent, so read this)
 
@@ -45,8 +45,9 @@ Markdown documents (read-only) ──────┘                   Caddy ser
 .
 ├── README.md                 User docs: setup, mounts, features, HTTP API list
 ├── compose.yaml              Services: api, web; profile "test": backend-tests, frontend-check
-├── justfile                  Command shortcuts (just setup / up / test / sync / archive / ...)
+├── justfile                  Command shortcuts and default ports (just setup / serve / open / up / test / ...)
 ├── .env.example              VIEWER_* host settings (copy to .env, gitignored)
+├── data/                     Native runs only: viewer.sqlite3                    (gitignored)
 ├── config/
 │   ├── sources.example.toml  Copy to config/sources.toml (gitignored)
 │   └── session_metadata.example.json
@@ -159,14 +160,14 @@ Notes that matter when editing:
 - Virtuoso indexes are 0-based; `message_index` from the API is 1-based. Conversions happen throughout `Transcript` (`index + 1`, `messageIndex - 1`).
 - Messages are fetched in blocks of 30 (`BLOCK_SIZE`); at most 7 blocks stay cached (`MAX_CACHED_BLOCKS`).
 - Annotation anchoring depends on the `data-source-*-line` attributes added in `MarkdownRenderer.tsx`. A new Markdown element component should call `sourcePosition(node)` or annotations inside it will lose line information.
-- `vite.config.ts` has no dev-server proxy, so `npm run dev` does not reach `/api` by itself. The supported full-stack path is Docker Compose.
+- `vite.config.ts` proxies `/api` to `127.0.0.1:$VIEWER_API_PORT` (default 41731) in `vite` and `vite preview`, and allows `*.ts.net` hosts for `tailscale serve`.
 
 ## Where state lives
 
 | State | Location | Rebuildable from transcripts? |
 | --- | --- | --- |
-| Catalog and messages | SQLite (Docker volume `viewer-data`, `/data/viewer.sqlite3`) | Yes |
-| **Annotations** | SQLite, same file | **No. Back up before deleting the volume.** |
+| Catalog and messages | SQLite: `data/viewer.sqlite3` natively, Docker volume `viewer-data` (`/data/viewer.sqlite3`) in Compose | Yes |
+| **Annotations** | SQLite, same file | **No. Back up before deleting the file or volume.** |
 | Custom titles, hidden flag | `metadata/session_metadata.json`, keyed by session UUID | n/a |
 | Bookmarks, folds, watch, sidebar, view mode | Browser `localStorage` | n/a |
 | Bookmark backups | `bookmarks/<session-id>.json` | n/a |
@@ -203,8 +204,8 @@ source copy of a session (original and archive) shares them.
 | Change the sidebar, session grouping, hidden sessions | `App` in `App.tsx` |
 | Change document listing or loading | `documents.py`, `DocumentViewer.tsx` |
 | Change archive format | `archive.py` and `adapters/archive.py` together (header, footer, checksum must agree) |
-| Change mounts, ports, or environment | `compose.yaml`, `.env.example`, `backend/Dockerfile`, `config.py` |
-| Change reverse proxy or static serving | `server/Caddyfile`, `server/Dockerfile` |
+| Change mounts, ports, or environment | `justfile` (`serve`, port defaults), `frontend/vite.config.ts`, `compose.yaml`, `.env.example`, `backend/Dockerfile`, `config.py` |
+| Change reverse proxy or static serving | `frontend/vite.config.ts` (native), `server/Caddyfile`, `server/Dockerfile` (Docker) |
 | Add a CLI command | `cli.py` (and a `justfile` recipe) |
 | Style something | `frontend/src/App.css` |
 
@@ -234,7 +235,8 @@ cd frontend && npm ci && npm run lint && npm run build
 just test          # or: docker compose --profile test run --rm --build backend-tests / frontend-check
 
 # Run the app
-just setup && just up      # then open http://localhost:8080
+just setup && just serve   # natively; then: just open (http://127.0.0.1:41730)
+just setup && just up      # in Docker, also on port 41730
 ```
 
 Useful diagnostics: `just count /path/to/session.jsonl` prints the message

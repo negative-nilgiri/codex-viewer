@@ -33,11 +33,14 @@ cd frontend && npm ci && npm run lint && npm run build
 # Both, in Docker, with no host toolchain
 just test
 
-# Run the app at http://localhost:8080
+# Run the app natively at http://127.0.0.1:41730 (ports: VIEWER_PORT, VIEWER_API_PORT)
+just setup && just serve
+
+# Or in Docker, at http://localhost:41730
 just setup && just up
 ```
 
-`npm run dev` does not proxy `/api`; use Docker Compose to run the full app.
+`vite.config.ts` proxies `/api` to `127.0.0.1:$VIEWER_API_PORT` in both `vite` and `vite preview`; `just serve` sets it.
 There are no frontend unit tests, so lint and the build are the frontend check.
 After changing frontend code, verify the UI in the running app, not only the build.
 

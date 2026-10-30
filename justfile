@@ -1,6 +1,10 @@
 set dotenv-load := true
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
+# Browser port and API port; override either in .env.
+export VIEWER_PORT := env_var_or_default("VIEWER_PORT", "41730")
+export VIEWER_API_PORT := env_var_or_default("VIEWER_API_PORT", "41731")
+
 # List the available commands.
 default:
     @just --list
@@ -29,6 +33,31 @@ setup:
         fi
     fi
 
+# Build the frontend, then run the API and the web server natively until Ctrl-C.
+serve: setup
+    #!/usr/bin/env bash
+    set -eu
+    export VIEWER_DATABASE=data/viewer.sqlite3 \
+        VIEWER_SOURCES_FILE=config/sources.toml \
+        VIEWER_SESSION_METADATA_FILE="${VIEWER_METADATA_ROOT:-./metadata}/session_metadata.json" \
+        VIEWER_BOOKMARKS_DIRECTORY=bookmarks \
+        VIEWER_ARCHIVES_DIRECTORY="${VIEWER_ARCHIVES_ROOT:-./archives}" \
+        VIEWER_DOCUMENTS_DIRECTORY="${VIEWER_DOCUMENTS_ROOT:-./documents}"
+    npm --prefix frontend run build
+    trap 'kill "$api" "$web" 2>/dev/null' EXIT
+    uv run --project backend --frozen uvicorn session_viewer_backend.api:app \
+        --host 127.0.0.1 --port "$VIEWER_API_PORT" &
+    api=$!
+    (cd frontend && exec node_modules/.bin/vite preview \
+        --host 127.0.0.1 --port "$VIEWER_PORT" --strictPort) &
+    web=$!
+    # Stop both when either one exits (macOS bash 3.2 has no `wait -n`).
+    while kill -0 "$api" 2>/dev/null && kill -0 "$web" 2>/dev/null; do sleep 1; done
+
+# Open the viewer in the default browser.
+open:
+    open "http://127.0.0.1:$VIEWER_PORT"
+
 # Build images and start the viewer in the background.
 up: setup
     docker compose up --build -d
@@ -55,7 +84,7 @@ status:
 
 # Check the HTTP health endpoint.
 health:
-    curl --fail --silent --show-error "http://localhost:${VIEWER_PORT:-8080}/api/health"
+    curl --fail --silent --show-error "http://127.0.0.1:$VIEWER_PORT/api/health"
     @echo
 
 # Follow API and web logs.

@@ -87,7 +87,7 @@ VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
 VIEWER_ARCHIVES_ROOT=./archives
 VIEWER_METADATA_ROOT=./metadata
 VIEWER_DOCUMENTS_ROOT=./documents
-VIEWER_PORT=8080
+VIEWER_PORT=41730
 ```
 
 That exact directory becomes `/sources` inside the container:
@@ -124,7 +124,7 @@ VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
 VIEWER_ARCHIVES_ROOT=./archives
 VIEWER_METADATA_ROOT=./metadata
 VIEWER_DOCUMENTS_ROOT=./documents
-VIEWER_PORT=8080
+VIEWER_PORT=41730
 ```
 
 The paths beneath that parent retain the same relative layout beneath
@@ -169,7 +169,7 @@ Start the application from the repository root:
 docker compose up --build -d
 ```
 
-Then open <http://localhost:8080>. The first page load discovers available
+Then open <http://localhost:41730>. The first page load discovers available
 sessions. Select one and press **Index session** to import its visible messages.
 Enable **Watch** only when you want the open session to follow new messages.
 
@@ -185,6 +185,28 @@ the exact resolved mount before debugging discovery, run:
 docker compose up --build -d
 docker compose config
 ```
+
+## Run without Docker
+
+The same app runs directly on the host with `uv` (Python 3.14) and Node.js:
+
+```bash
+just serve   # build the frontend, then run both servers until Ctrl-C
+just open    # open http://127.0.0.1:41730 in the default browser
+```
+
+- The browser page is on `VIEWER_PORT` (default `41730`) and the API on
+  `VIEWER_API_PORT` (default `41731`). Override either in `.env`. Both bind to
+  `127.0.0.1`.
+- `vite preview` serves the build and forwards `/api` to the API port, which is
+  the job Caddy does in Docker. It accepts `*.ts.net` host names, so
+  `tailscale serve --bg --http=80 41730` reaches it from a phone on the tailnet.
+- Nothing is mounted, so every `path` in `config/sources.toml` is a host path,
+  for example `/Users/me/.claude/projects`. A relative path is resolved from
+  `config/`, so the archive source is `../archives`.
+- SQLite lives in `data/viewer.sqlite3`, not in the Docker volume. The other
+  data directories are the same as with Docker.
+- If either server exits, `just serve` stops the other one.
 
 ## Command shortcuts with `just`
 
@@ -591,7 +613,8 @@ Only visible user and assistant text is indexed. Metadata, injected context,
 reasoning, tool calls, tool results, attachments, and other non-conversation
 records are excluded.
 
-SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`.
+SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`, or
+in `data/viewer.sqlite3` when [run without Docker](#run-without-docker).
 The session catalog and messages inside it are rebuildable indexes, but saved
 annotations are user data and cannot be reconstructed from the JSONL
 transcripts. Normal container rebuilds preserve the volume. Back it up before
@@ -617,7 +640,7 @@ Check service status and health:
 
 ```bash
 docker compose ps
-curl http://localhost:8080/api/health
+just health
 ```
 
 Follow backend and web-server logs:
