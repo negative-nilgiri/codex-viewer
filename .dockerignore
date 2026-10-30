@@ -1,8 +1,0 @@
-.git
-.env
-**/.DS_Store
-**/__pycache__
-**/.pytest_cache
-backend/.venv
-frontend/node_modules
-frontend/dist

@@ -27,7 +27,7 @@ def parse_args(argv=None):
     archive_parser.add_argument("source", help="Configured source label")
     archive_parser.add_argument("session_id", help="Full indexed session UUID")
     discover_parser = commands.add_parser(
-        "discover", help="Catalog mounted transcripts without indexing their messages"
+        "discover", help="Catalog configured transcripts without indexing their messages"
     )
     discover_parser.add_argument(
         "source",

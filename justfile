@@ -5,24 +5,35 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 export VIEWER_PORT := env_var_or_default("VIEWER_PORT", "41730")
 export VIEWER_API_PORT := env_var_or_default("VIEWER_API_PORT", "41731")
 
+# Backend settings. Recipes run from this directory, so relative paths start here.
+export VIEWER_DATABASE := "data/viewer.sqlite3"
+export VIEWER_SOURCES_FILE := "config/sources.toml"
+export VIEWER_SESSION_METADATA_FILE := env_var_or_default("VIEWER_METADATA_ROOT", "metadata") / "session_metadata.json"
+export VIEWER_BOOKMARKS_DIRECTORY := "bookmarks"
+export VIEWER_ARCHIVES_DIRECTORY := env_var_or_default("VIEWER_ARCHIVES_ROOT", "archives")
+export VIEWER_DOCUMENTS_DIRECTORY := env_var_or_default("VIEWER_DOCUMENTS_ROOT", "documents")
+
+# The process started by serve and up. [r] keeps pgrep from matching a command line that contains this pattern.
+viewer_process := "bash .*scripts/[r]un_viewer.sh"
+
 # List the available commands.
 default:
     @just --list
 
-# Create missing local configuration without overwriting existing files.
+# Create missing local configuration and install frontend dependencies, without overwriting anything.
 setup:
     #!/usr/bin/env bash
     set -eu
     if [[ ! -f .env ]]; then
         cp .env.example .env
-        echo "Created .env; set VIEWER_SOURCES_ROOT before starting the viewer."
+        echo "Created .env."
     fi
     if [[ ! -f config/sources.toml ]]; then
         cp config/sources.example.toml config/sources.toml
-        echo "Created config/sources.toml; configure its source paths before starting."
+        echo "Created config/sources.toml; set its source paths before starting."
     fi
     metadata_root="${VIEWER_METADATA_ROOT:-./metadata}"
-    mkdir -p bookmarks "$metadata_root" "${VIEWER_ARCHIVES_ROOT:-./archives}" "${VIEWER_DOCUMENTS_ROOT:-./documents}"
+    mkdir -p data bookmarks "$metadata_root" "${VIEWER_ARCHIVES_ROOT:-./archives}" "${VIEWER_DOCUMENTS_ROOT:-./documents}"
     if [[ ! -f "$metadata_root/session_metadata.json" ]]; then
         if [[ -f config/session_metadata.json ]]; then
             mv config/session_metadata.json "$metadata_root/session_metadata.json"
@@ -32,27 +43,78 @@ setup:
             echo "Created $metadata_root/session_metadata.json."
         fi
     fi
+    if [[ ! -d frontend/node_modules ]]; then
+        echo "Installing frontend dependencies..."
+        npm --prefix frontend ci --silent
+    fi
 
-# Build the frontend, then run the API and the web server natively until Ctrl-C.
-serve: setup
+# Build the frontend into frontend/dist.
+build:
+    @npm --prefix frontend run build
+
+# Build the frontend, then run the viewer in this terminal until Ctrl-C.
+[no-exit-message]
+serve: setup build
+    @scripts/run_viewer.sh
+
+# Build the frontend, then start the viewer in the background (log: data/viewer.log).
+[no-exit-message]
+up: setup
     #!/usr/bin/env bash
     set -eu
-    export VIEWER_DATABASE=data/viewer.sqlite3 \
-        VIEWER_SOURCES_FILE=config/sources.toml \
-        VIEWER_SESSION_METADATA_FILE="${VIEWER_METADATA_ROOT:-./metadata}/session_metadata.json" \
-        VIEWER_BOOKMARKS_DIRECTORY=bookmarks \
-        VIEWER_ARCHIVES_DIRECTORY="${VIEWER_ARCHIVES_ROOT:-./archives}" \
-        VIEWER_DOCUMENTS_DIRECTORY="${VIEWER_DOCUMENTS_ROOT:-./documents}"
-    npm --prefix frontend run build
-    trap 'kill "$api" "$web" 2>/dev/null' EXIT
-    uv run --project backend --frozen uvicorn session_viewer_backend.api:app \
-        --host 127.0.0.1 --port "$VIEWER_API_PORT" &
-    api=$!
-    (cd frontend && exec node_modules/.bin/vite preview \
-        --host 127.0.0.1 --port "$VIEWER_PORT" --strictPort) &
-    web=$!
-    # Stop both when either one exits (macOS bash 3.2 has no `wait -n`).
-    while kill -0 "$api" 2>/dev/null && kill -0 "$web" 2>/dev/null; do sleep 1; done
+    if pgrep -f '{{viewer_process}}' >/dev/null; then
+        echo "The viewer is already running. Use just restart to rebuild and restart it."
+        exit 0
+    fi
+    echo "Building the frontend..."
+    if ! npm --prefix frontend run build > data/viewer.log 2>&1; then
+        tail -n 20 data/viewer.log >&2
+        echo "The frontend build failed. The full output is in data/viewer.log." >&2
+        exit 1
+    fi
+    nohup scripts/run_viewer.sh >> data/viewer.log 2>&1 &
+    pid=$!
+    healthy() { curl --fail --silent --output /dev/null "http://127.0.0.1:$VIEWER_PORT/api/health"; }
+    # Wait up to a minute, but stop waiting as soon as the script exits (for example, a port is taken).
+    for _ in $(seq 120); do
+        if ! kill -0 "$pid" 2>/dev/null || healthy; then break; fi
+        sleep 0.5
+    done
+    if kill -0 "$pid" 2>/dev/null && healthy; then
+        echo "The viewer is up on http://127.0.0.1:$VIEWER_PORT"
+        exit 0
+    fi
+    kill "$pid" 2>/dev/null || true
+    tail -n 20 data/viewer.log >&2
+    echo "The viewer didn't start. The full log is in data/viewer.log." >&2
+    exit 1
+
+# Stop the viewer, whether it was started by up or serve.
+[no-exit-message]
+down:
+    #!/usr/bin/env bash
+    set -eu
+    if ! pkill -f '{{viewer_process}}'; then
+        echo "The viewer isn't running."
+        exit 0
+    fi
+    for _ in $(seq 50); do
+        if ! pgrep -f '{{viewer_process}}' >/dev/null; then
+            echo "The viewer is stopped."
+            exit 0
+        fi
+        sleep 0.2
+    done
+    echo "The viewer didn't stop within 10 seconds. Still listening:" >&2
+    lsof -nP -iTCP:"$VIEWER_PORT" -iTCP:"$VIEWER_API_PORT" -sTCP:LISTEN >&2 || true
+    exit 1
+
+# Rebuild the frontend and restart the viewer in the background.
+restart: down up
+
+# Follow the log of the viewer started by up.
+logs:
+    @tail -n 100 -f data/viewer.log
 
 # Open the viewer in the default browser.
 open:
@@ -62,82 +124,45 @@ open:
 tailscale-serve: health
     @tailscale serve --bg --http=80 "$VIEWER_PORT"
 
-# Build images and start the viewer in the background.
-up: setup
-    docker compose up --build -d
-
-# Start existing images without rebuilding them.
-start: setup
-    docker compose up -d
-
-# Build the application images without starting them.
-build:
-    docker compose build api web
-
-# Restart the running containers without rebuilding them.
-restart:
-    docker compose restart api web
-
-# Stop containers while preserving the SQLite volume and bookmark files.
-down:
-    docker compose down
-
-# Show container status.
-status:
-    docker compose ps
-
 # Check the HTTP health endpoint.
 [no-exit-message]
 health:
-    @curl --fail --silent --output /dev/null "http://127.0.0.1:$VIEWER_PORT/api/health" || { echo "The viewer isn't answering on port $VIEWER_PORT. Start it with: just serve" >&2; exit 1; }
+    @curl --fail --silent --output /dev/null "http://127.0.0.1:$VIEWER_PORT/api/health" || { echo "The viewer isn't answering on port $VIEWER_PORT. Start it with: just up" >&2; exit 1; }
     @echo "The viewer is up on http://127.0.0.1:$VIEWER_PORT"
 
-# Follow API and web logs.
-logs:
-    docker compose logs --tail=100 -f api web
+alias status := health
 
-# Follow only API logs.
-logs-api:
-    docker compose logs --tail=100 -f api
-
-# Follow only Caddy/web logs.
-logs-web:
-    docker compose logs --tail=100 -f web
-
-# Print the fully resolved Compose configuration and mounts.
-config:
-    docker compose config
-
-# List configured source labels, adapters, paths, and mount availability.
+# List configured source labels, adapters, paths, and whether each path exists.
 sources:
-    docker compose exec api viewer sources
+    @uv run --project backend --frozen viewer sources
 
 # Discover sessions from every configured source.
 discover:
-    docker compose exec api viewer discover
+    @uv run --project backend --frozen viewer discover
 
 # Discover sessions from one configured source.
 discover-source source:
-    docker compose exec api viewer discover {{quote(source)}}
+    @uv run --project backend --frozen viewer discover {{quote(source)}}
 
 # Incrementally index one session (full UUID or unique prefix).
 sync source session:
-    docker compose exec api viewer sync {{quote(source)}} {{quote(session)}}
+    @uv run --project backend --frozen viewer sync {{quote(source)}} {{quote(session)}}
 
 # Export the currently indexed messages from one session to durable archive JSONL.
 archive source session:
-    docker compose exec api viewer archive {{quote(source)}} {{quote(session)}}
+    @uv run --project backend --frozen viewer archive {{quote(source)}} {{quote(session)}}
 
 # Run all focused backend and frontend checks.
 test: test-backend test-frontend
 
-# Run backend tests in the uv-based test container.
+# Run the backend tests.
 test-backend:
-    docker compose --profile test run --rm --build backend-tests
+    @cd backend && uv run --frozen --group dev pytest -q
 
-# Run frontend lint and the production build in its test container.
+# Run frontend lint and the production build.
 test-frontend:
-    docker compose --profile test run --rm --build frontend-check
+    @npm --prefix frontend run lint
+    @npm --prefix frontend run build
 
 # List custom session titles.
 title-list:

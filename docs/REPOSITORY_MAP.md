@@ -15,19 +15,19 @@ transcripts (and standalone Markdown files) and renders them as Markdown.
 ```text
 transcripts (read-only JSONL) ──► FastAPI ──► SQLite index ──► React (virtualized)
                                      ▲                              │
-Markdown documents (read-only) ──────┘                   Caddy serves the build
-                                                         and proxies /api/*
+Markdown documents (read-only) ──────┘              vite preview serves the build
+                                                    and proxies /api/* to uvicorn
 ```
 
 - Backend: Python 3.14, FastAPI, standard-library `sqlite3`, managed with `uv`.
 - Frontend: React 19 + TypeScript + Vite (React Compiler enabled), `react-virtuoso`.
-- Runtime: natively with `just serve` (uvicorn on `VIEWER_API_PORT`, `vite preview` on `VIEWER_PORT` proxying `/api`), or Docker Compose (`api` = backend, `web` = Caddy + built frontend).
+- Runtime: native processes on `127.0.0.1`, started by `scripts/run_viewer.sh` through `just up` (background) or `just serve` (foreground): uvicorn on `VIEWER_API_PORT` (41731) and `vite preview` on `VIEWER_PORT` (41730), which proxies `/api`.
 
 ## Vocabulary (the code is inconsistent, so read this)
 
 | Term | Meaning |
 | --- | --- |
-| **source** | One entry in `config/sources.toml`: `id`, `adapter`, container `path`. |
+| **source** | One entry in `config/sources.toml`: `id`, `adapter`, host `path` (absolute, or relative to `config/`). |
 | **profile** | The code's name for a source id. In the DB, API paths, and `api.ts`, `profile` == source id. |
 | **session** | One conversation, identified by `(profile, session_id)`. Session IDs are lowercased UUIDs. |
 | **adapter** | Parser for one JSONL format: `codex`, `claude`, or `archive`. |
@@ -37,24 +37,22 @@ Markdown documents (read-only) ──────┘                   Caddy ser
 | **document** | A `.md` file read straight from disk. Never stored in SQLite. |
 | **annotation** | A note attached to a quoted passage of a message or document. Stored in SQLite. |
 | **bookmark** | A starred message. Lives in browser `localStorage`; optional JSON backup on disk. |
-| **"codex"** | Legacy project name. Still appears in the compose project name, `localStorage` keys (`codex-sessions-viewer:*`), the API title, and the page title. Not a feature flag. |
+| **"codex"** | Legacy project name. Still appears in `localStorage` keys (`codex-sessions-viewer:*`), the API title, and the page title. Not a feature flag. |
 
 ## Top-level layout
 
 ```text
 .
-├── README.md                 User docs: setup, mounts, features, HTTP API list
-├── compose.yaml              Services: api, web; profile "test": backend-tests, frontend-check
-├── justfile                  Command shortcuts and default ports (just setup / serve / open / up / test / ...)
+├── README.md                 User docs: setup, sources, features, HTTP API list
+├── justfile                  Commands, default ports and VIEWER_* paths (just setup / up / down / serve / test / ...)
 ├── .env.example              VIEWER_* host settings (copy to .env, gitignored)
-├── data/                     Native runs only: viewer.sqlite3                    (gitignored)
+├── data/                     viewer.sqlite3 and viewer.log (just up)             (gitignored)
 ├── config/
 │   ├── sources.example.toml  Copy to config/sources.toml (gitignored)
 │   └── session_metadata.example.json
 ├── backend/                  FastAPI app, CLI, tests   (see "Backend")
 ├── frontend/                 React SPA                 (see "Frontend")
-├── server/                   Caddyfile + Dockerfile that bakes the frontend build into Caddy
-├── scripts/                  Host-side helpers: session_title.py, count_session_messages.py
+├── scripts/                  run_viewer.sh (runs both servers), session_title.py, count_session_messages.py
 ├── docs/                     This map
 ├── metadata/                 Writable: session_metadata.json (titles, hidden)   (contents gitignored)
 ├── bookmarks/                Writable: bookmark backups                          (gitignored)
@@ -63,8 +61,9 @@ Markdown documents (read-only) ──────┘                   Caddy ser
 └── lessons/                  Untracked generated lesson material; not part of the app
 ```
 
-Local runtime data directories (`metadata/`, `bookmarks/`, `archives/`,
-`documents/`) are bind-mounted into the `api` container; see `compose.yaml`.
+The justfile points the backend at the local runtime data directories (`data/`,
+`metadata/`, `bookmarks/`, `archives/`, `documents/`) through `VIEWER_*` variables;
+`.env` can move `metadata/`, `archives/`, and `documents/`.
 
 ## Backend
 
@@ -166,13 +165,13 @@ Notes that matter when editing:
 
 | State | Location | Rebuildable from transcripts? |
 | --- | --- | --- |
-| Catalog and messages | SQLite: `data/viewer.sqlite3` natively, Docker volume `viewer-data` (`/data/viewer.sqlite3`) in Compose | Yes |
-| **Annotations** | SQLite, same file | **No. Back up before deleting the file or volume.** |
+| Catalog and messages | SQLite: `data/viewer.sqlite3` | Yes |
+| **Annotations** | SQLite, same file | **No. Back up before deleting the file.** |
 | Custom titles, hidden flag | `metadata/session_metadata.json`, keyed by session UUID | n/a |
 | Bookmarks, folds, watch, sidebar, view mode | Browser `localStorage` | n/a |
 | Bookmark backups | `bookmarks/<session-id>.json` | n/a |
 | Archives | `archives/<session-id>.jsonl` | n/a |
-| Transcripts, Markdown documents | Host directories, mounted read-only | Source of truth; never written |
+| Transcripts, Markdown documents | Host directories, only read | Source of truth; never written |
 
 Titles and the hidden flag are scoped by session UUID, not by source, so every
 source copy of a session (original and archive) shares them.
@@ -184,7 +183,7 @@ source copy of a session (original and archive) shares them.
 - Only user and assistant text is indexed. Tool calls, tool results, reasoning, and injected context are excluded by adapters.
 - File writes for metadata, bookmarks, and archives are atomic (temp file + `os.replace`).
 - Document IDs are validated and resolved under the configured root; escaping it must keep failing.
-- Raw HTML in Markdown is intentionally unsanitized (trusted local use, Caddy bound to `127.0.0.1`). Do not expose the app publicly.
+- Raw HTML in Markdown is intentionally unsanitized (trusted local use, both servers bound to `127.0.0.1`). Do not expose the app publicly.
 
 ## Task → where to look
 
@@ -204,8 +203,9 @@ source copy of a session (original and archive) shares them.
 | Change the sidebar, session grouping, hidden sessions | `App` in `App.tsx` |
 | Change document listing or loading | `documents.py`, `DocumentViewer.tsx` |
 | Change archive format | `archive.py` and `adapters/archive.py` together (header, footer, checksum must agree) |
-| Change mounts, ports, or environment | `justfile` (`serve`, port defaults), `frontend/vite.config.ts`, `compose.yaml`, `.env.example`, `backend/Dockerfile`, `config.py` |
-| Change reverse proxy or static serving | `frontend/vite.config.ts` (native), `server/Caddyfile`, `server/Dockerfile` (Docker) |
+| Change ports, paths, or environment | `justfile` (ports, `VIEWER_*` paths), `.env.example`, `config.py` |
+| Change how the app is started or stopped | `scripts/run_viewer.sh`, `justfile` (`up`, `down`, `serve`) |
+| Change reverse proxy or static serving | `frontend/vite.config.ts` |
 | Add a CLI command | `cli.py` (and a `justfile` recipe) |
 | Style something | `frontend/src/App.css` |
 
@@ -231,12 +231,13 @@ cd backend && uv run --group dev pytest
 # Frontend
 cd frontend && npm ci && npm run lint && npm run build
 
-# Everything in Docker (no host toolchain needed)
-just test          # or: docker compose --profile test run --rm --build backend-tests / frontend-check
+# Both
+just test
 
 # Run the app
-just setup && just serve   # natively; then: just open (http://127.0.0.1:41730)
-just setup && just up      # in Docker, also on port 41730
+just setup && just up      # background; then: just open (http://127.0.0.1:41730)
+just down                  # stop it; just logs follows data/viewer.log
+just serve                 # or run it in this terminal until Ctrl-C
 ```
 
 Useful diagnostics: `just count /path/to/session.jsonl` prints the message

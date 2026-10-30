@@ -10,7 +10,7 @@ The application has four small pieces:
 - FastAPI discovers transcripts and incrementally indexes visible messages.
 - SQLite stores the rebuildable message index and durable annotations.
 - React renders only the part of a conversation currently being viewed.
-- Caddy serves the frontend and proxies API requests.
+- Vite's preview server serves the built frontend and forwards API requests.
 
 Markdown documents are read directly from a separate directory. They are not
 copied into SQLite or converted into fake conversations.
@@ -18,20 +18,18 @@ copied into SQLite or converted into fake conversations.
 Contributors and coding agents: see [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)
 for where everything lives.
 
-Transcript files are mounted read-only and remain the source of truth. The
-viewer never modifies them. Conversation archives created explicitly from the
+Transcript files remain the source of truth. The viewer only reads them and
+never modifies them. Conversation archives created explicitly from the
 UI or CLI use a separate writable directory.
 
 ## Requirements
 
-- Docker with Docker Compose
+- [uv](https://docs.astral.sh/uv/) (it provides Python 3.14 for the backend)
+- Node.js and npm for the frontend
+- [`just`](https://just.systems/) to run the project commands
 - A directory containing Codex and/or Claude Code JSONL session files
 - A modern web browser
-- Optional: [`just`](https://just.systems/) for concise project commands
 - Optional: Python 3.10 or newer for the host-side title and counting scripts
-
-Python, Node.js, and Caddy do not need to be installed on the host for normal
-viewer use. Docker builds everything the application requires.
 
 ## Common session locations
 
@@ -46,27 +44,21 @@ These are conventional defaults, not paths hard-coded by the viewer. Use the
 actual locations on your machine if either tool has been configured with a
 different home directory.
 
-`$HOME` above is shell notation for your user home. In `.env`, use the expanded
-absolute path—for example `/Users/me/.codex/sessions`—rather than writing the
-literal `$HOME` expression. Docker Compose mounts `VIEWER_SOURCES_ROOT` directly
-and shell-style expansion inside `.env` should not be relied upon.
+`$HOME` above is shell notation for your user home. In `config/sources.toml`,
+use the expanded absolute path, for example `/Users/me/.codex/sessions`. The
+viewer does not expand `~` or `$HOME`.
 
 ## Quick start
 
-`VIEWER_SOURCES_ROOT` is the deepest common host directory containing every
-session directory you want the viewer to access. Docker mounts this one
-directory read-only at `/sources`; the source configuration selects directories
-inside that mount. Do not choose a broader parent than necessary.
-
-Start by creating local configuration files from the documented examples:
+Create the local configuration and install the frontend dependencies:
 
 ```bash
-cp .env.example .env
-cp config/sources.example.toml config/sources.toml
+just setup
 ```
 
-Both resulting files are gitignored, so machine-specific paths and source names
-will not be committed.
+This creates `.env` and `config/sources.toml` from the documented examples
+without overwriting existing files. Both are gitignored, so machine-specific
+paths and source names will not be committed.
 
 ### Example: one Codex sessions directory
 
@@ -79,159 +71,101 @@ Suppose the only sessions you want to track are beneath:
 └── ...
 ```
 
-The deepest directory containing everything you want is the `sessions`
-directory itself, so configure `.env` with its absolute path:
-
-```dotenv
-VIEWER_SOURCES_ROOT=/Users/me/.codex/sessions
-VIEWER_ARCHIVES_ROOT=./archives
-VIEWER_METADATA_ROOT=./metadata
-VIEWER_DOCUMENTS_ROOT=./documents
-VIEWER_PORT=41730
-```
-
-That exact directory becomes `/sources` inside the container:
-
-```text
-Host:      /Users/me/.codex/sessions
-Container: /sources
-```
-
-Therefore `config/sources.toml` uses `/sources`, not the host path:
+Point one source at that directory in `config/sources.toml`:
 
 ```toml
 [[sources]]
 id = "personal"
 adapter = "codex"
-path = "/sources"
+path = "/Users/me/.codex/sessions"
 ```
 
 ### Example: several session directories
 
-Suppose you want all three of these directories:
-
-```text
-/Users/me/agent-sessions/          # deepest common parent
-├── personal/sessions/             # Codex
-├── work/sessions/                 # Codex
-└── claude-projects/               # Claude Code
-```
-
-Set the common parent as the mount:
-
-```dotenv
-VIEWER_SOURCES_ROOT=/Users/me/agent-sessions
-VIEWER_ARCHIVES_ROOT=./archives
-VIEWER_METADATA_ROOT=./metadata
-VIEWER_DOCUMENTS_ROOT=./documents
-VIEWER_PORT=41730
-```
-
-The paths beneath that parent retain the same relative layout beneath
-`/sources`, so configure all three explicitly:
+Add one `[[sources]]` block per directory:
 
 ```toml
 [[sources]]
 id = "personal"
 adapter = "codex"
-path = "/sources/personal/sessions"
+path = "/Users/me/.codex/sessions"
 
 [[sources]]
 id = "work"
 adapter = "codex"
-path = "/sources/work/sessions"
+path = "/Users/me/.codex-work/sessions"
 
 [[sources]]
 id = "claude"
 adapter = "claude"
-path = "/sources/claude-projects"
+path = "/Users/me/.claude/projects"
 ```
 
 Here:
 
 - A **source** is one configured directory tree containing session JSONL files.
-  It has a stable label, one transcript-format adapter, and one path inside the
-  container. A source can contain any number of sessions recursively; it does
-  not mean one session and does not have to mean one account.
+  It has a stable label, one transcript-format adapter, and one path. A source
+  can contain any number of sessions recursively; it does not mean one session
+  and does not have to mean one account.
 - `id` is a label chosen by you. It is displayed in the viewer and is not an
   account name. Keep it stable because it becomes part of the indexed session
   identity and browser preferences.
 - `adapter` selects the transcript format: `codex`, `claude`, or the viewer's
   own `archive` format.
-- `path` is always a path inside the container and must be reachable beneath
-  `/sources` for external transcript sources. The built-in archive source uses
-  the separate `/archives` writable mount. Discovery searches either path
-  recursively for supported JSONL files.
+- `path` is a host path, either absolute or relative to the `config/` directory.
+  The built-in archive source uses `../archives`, the repository's `archives/`
+  directory. Discovery searches each path recursively for supported JSONL files.
 
-Start the application from the repository root:
-
-```bash
-docker compose up --build -d
-```
-
-Then open <http://localhost:41730>. The first page load discovers available
-sessions. Select one and press **Index session** to import its visible messages.
-Enable **Watch** only when you want the open session to follow new messages.
-
-The comments in `config/sources.example.toml` repeat these mapping rules. All
-external transcript source paths must resolve beneath the one host directory
-selected by `VIEWER_SOURCES_ROOT`; the archive source is the one documented
-exception because it uses `/archives`.
-
-After changing `.env` or its mounted root, recreate the containers. To inspect
-the exact resolved mount before debugging discovery, run:
+### Start the viewer
 
 ```bash
-docker compose up --build -d
-docker compose config
-```
-
-## Run without Docker
-
-The same app runs directly on the host with `uv` (Python 3.14) and Node.js:
-
-```bash
-just serve   # build the frontend, then run both servers until Ctrl-C
+just up      # build the frontend, then start the viewer in the background
 just open    # open http://127.0.0.1:41730 in the default browser
+just down    # stop it
 ```
 
-- The browser page is on `VIEWER_PORT` (default `41730`) and the API on
-  `VIEWER_API_PORT` (default `41731`). Override either in `.env`. Both bind to
-  `127.0.0.1`.
-- `vite preview` serves the build and forwards `/api` to the API port, which is
-  the job Caddy does in Docker. It accepts `*.ts.net` host names, so
-  `just tailscale-serve` (port 80 of the tailnet name → `VIEWER_PORT`) reaches
-  it from a phone on the tailnet.
-- Nothing is mounted, so every `path` in `config/sources.toml` is a host path,
-  for example `/Users/me/.claude/projects`. A relative path is resolved from
-  `config/`, so the archive source is `../archives`.
-- SQLite lives in `data/viewer.sqlite3`, not in the Docker volume. The other
-  data directories are the same as with Docker.
-- If either server exits, `just serve` stops the other one.
+The first page load discovers available sessions. Select one and press **Index
+session** to import its visible messages. Enable **Watch** only when you want
+the open session to follow new messages.
+
+- `just up` runs `scripts/run_viewer.sh` in the background: the backend (uvicorn)
+  on `VIEWER_API_PORT` and Vite's preview server on `VIEWER_PORT`, which serves
+  the built frontend and forwards `/api` to the backend. Both bind to
+  `127.0.0.1`. The defaults are `41730` and `41731`; override either in `.env`.
+- The output of both servers goes to `data/viewer.log` (`just logs` follows it).
+  If either server exits, the other one is stopped too.
+- The viewer stops when the computer restarts. Run `just up` again afterwards.
+- `just serve` runs the same thing in the current terminal until Ctrl-C.
+- Vite accepts `*.ts.net` host names, so `just tailscale-serve` (port 80 of the
+  tailnet name → `VIEWER_PORT`) reaches the running viewer from a phone on the
+  tailnet. It refuses to start when the viewer isn't answering.
+
+After changing `.env`, `config/sources.toml`, or the application code, run
+`just restart`.
 
 ## Command shortcuts with `just`
 
 The checked-in `justfile` provides short names for routine commands. Running
 `just` without arguments prints the complete command list with descriptions.
-It is only a convenience layer; the equivalent Docker commands remain valid.
 
 First-time setup and startup:
 
 ```bash
-just setup       # Create missing config and local data directories
-# Edit .env and config/sources.toml now.
-just up          # Build and start
+just setup       # Create missing config and data directories, install frontend dependencies
+# Edit config/sources.toml (and optionally .env) now.
+just up          # Build the frontend and start in the background
 ```
 
 Daily operation:
 
 ```bash
-just start
-just status
-just health
+just status      # same as just health
 just logs
-just logs-api
+just restart
 just down
+just serve       # run in this terminal instead of the background
+just open
+just tailscale-serve
 ```
 
 Discovery and indexing:
@@ -278,18 +212,18 @@ The same operations are available from the command line. A source ID and a
 complete session UUID or unique UUID prefix identify a session:
 
 ```bash
-docker compose exec api viewer sources
-docker compose exec api viewer discover
-docker compose exec api viewer discover personal
-docker compose exec api viewer sync personal 019fdbaf
-docker compose exec api viewer sync claude 087e7ac1
+just sources
+just discover
+just discover-source personal
+just sync personal 019fdbaf
+just sync claude 087e7ac1
 ```
 
 ## Read Markdown documents
 
-Compose mounts the host directory selected by `VIEWER_DOCUMENTS_ROOT` read-only
-at `/documents`. The default is the gitignored `documents/` directory beside
-this README:
+The viewer reads the directory selected by `VIEWER_DOCUMENTS_ROOT` and never
+writes to it. The default is the gitignored `documents/` directory beside this
+README:
 
 ```dotenv
 VIEWER_DOCUMENTS_ROOT=./documents
@@ -320,7 +254,7 @@ highlighting, raw HTML, and copy buttons as conversation messages.
 Documents are never written to SQLite and require no discovery, indexing, or
 synchronization command. The API only lists filesystem metadata and returns the
 selected file. To use a different directory, set an absolute host path in
-`.env`, then recreate the API container:
+`.env`, then run `just restart`:
 
 ```dotenv
 VIEWER_DOCUMENTS_ROOT=/Users/me/Documents/markdown-library
@@ -333,28 +267,22 @@ format. It exports only messages already present in SQLite, so press **Sync
 now** first when the source may have newer messages. Export is explicit: Watch
 and normal synchronization never write archives.
 
-By default Compose enables a writable bind mount:
-
-```text
-Host:      ./archives
-Container: /archives
-```
-
-The directory is gitignored. To store archives in a backed-up location, put an
-absolute host path in `.env`:
+By default archives are written to the gitignored `archives/` directory. To
+store them in a backed-up location, put an absolute host path in `.env`:
 
 ```dotenv
 VIEWER_ARCHIVES_ROOT=/Users/me/Documents/agent-conversation-archives
 ```
 
-Keep this source in `config/sources.toml` so exported files can be discovered
-and viewed like any other session:
+Keep this source in `config/sources.toml`, pointing at the same directory, so
+exported files can be discovered and viewed like any other session. With the
+default directory:
 
 ```toml
 [[sources]]
 id = "archive"
 adapter = "archive"
-path = "/archives"
+path = "../archives"
 ```
 
 From the UI, open an indexed session and press **Archive**. The confirmation
@@ -363,9 +291,6 @@ line, use the full session ID:
 
 ```bash
 just archive personal 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
-# Equivalent:
-docker compose exec api viewer archive \
-  personal 019fdbaf-c2ea-7e50-ae8f-8fa79e733904
 ```
 
 The result atomically overwrites `archives/<session-id>.jsonl`. A file contains
@@ -388,10 +313,9 @@ immediately to the header and sidebar, Escape or **Cancel** discards the edit,
 and **Reset** restores the title derived from the transcript.
 
 Titles are stored atomically in the host file
-`metadata/session_metadata.json`. Compose mounts only that metadata directory
-writable at `/metadata`; `config/sources.toml` remains inside the separate
-read-only `/config` mount. Consequently titles survive browser changes,
-container recreation, and rebuilding the SQLite index.
+`metadata/session_metadata.json`, apart from `config/sources.toml`.
+Consequently titles survive browser changes, restarts, and rebuilding the
+SQLite index.
 
 The command-line helper edits the same file. Copy the complete session ID from
 the session header and run:
@@ -595,7 +519,7 @@ The legend is derived without changing the Mermaid source or graph layout. It
 is shown only in diagram mode and only when styled classes are present.
 
 Raw HTML is not sanitized because this is a single-user viewer for trusted
-local transcripts. Caddy binds to `127.0.0.1` by default. Do not expose this
+local transcripts. Both servers bind to `127.0.0.1`. Do not expose this
 application publicly or use it for untrusted transcript files.
 
 ## Synchronization and stored data
@@ -614,12 +538,10 @@ Only visible user and assistant text is indexed. Metadata, injected context,
 reasoning, tool calls, tool results, attachments, and other non-conversation
 records are excluded.
 
-SQLite lives in the Docker volume named `codex-sessions-viewer_viewer-data`, or
-in `data/viewer.sqlite3` when [run without Docker](#run-without-docker).
-The session catalog and messages inside it are rebuildable indexes, but saved
-annotations are user data and cannot be reconstructed from the JSONL
-transcripts. Normal container rebuilds preserve the volume. Back it up before
-deliberately deleting Docker volumes if annotations matter to you.
+SQLite lives in the gitignored `data/viewer.sqlite3`. The session catalog and
+messages inside it are rebuildable indexes, but saved annotations are user data
+and cannot be reconstructed from the JSONL transcripts. Restarts and rebuilds
+keep the file. Back it up before deleting it if annotations matter to you.
 
 Conversation archives live in the writable directory selected by
 `VIEWER_ARCHIVES_ROOT` (`./archives` by default). Unlike SQLite, these are
@@ -637,36 +559,37 @@ older installations, and creates an empty metadata file for new installations.
 
 ## Useful operational commands
 
-Check service status and health:
+Check whether the viewer is running:
 
 ```bash
-docker compose ps
-just health
+just status
 ```
 
-Follow backend and web-server logs:
+Follow the backend and web-server log of a viewer started with `just up`:
 
 ```bash
-docker compose logs -f api web
+just logs
 ```
 
-Rebuild after changing application code:
+Rebuild and restart after changing application code or configuration:
 
 ```bash
-docker compose up --build -d
+just restart
 ```
 
-Stop the application without deleting the SQLite index:
+Stop the viewer without deleting the SQLite index:
 
 ```bash
-docker compose down
+just down
 ```
 
 Delete and rebuild all SQLite data only when intentionally starting over. This
 also permanently deletes saved annotations:
 
 ```bash
-docker compose down --volumes
+just down
+rm data/viewer.sqlite3
+just up
 ```
 
 ## Troubleshooting
@@ -676,13 +599,14 @@ docker compose down --volumes
 Run discovery directly and inspect its error:
 
 ```bash
-docker compose exec api viewer discover
-docker compose logs --tail=100 api
+just discover
+just sources
 ```
 
-Then use `docker compose config` to verify `VIEWER_SOURCES_ROOT` and make sure
-every external path in `config/sources.toml` exists beneath `/sources` in the
-container. The archive adapter should instead point to `/archives`.
+`just sources` prints every configured path and whether it exists. Each path in
+`config/sources.toml` must be absolute or relative to `config/`; the archive
+source should point at the archives directory (`../archives` by default). For
+errors from the running viewer, see `just logs`.
 
 ### A session exists but has no messages
 
@@ -692,9 +616,9 @@ displayed as messages.
 
 ### Markdown documents do not appear
 
-Switch to **Documents** and press its refresh icon. Check the resolved read-only
-mount with `docker compose config`; `.md` files must be beneath the host path in
-`VIEWER_DOCUMENTS_ROOT`. Files must be UTF-8 to open successfully.
+Switch to **Documents** and press its refresh icon. `.md` files must be beneath
+the directory set by `VIEWER_DOCUMENTS_ROOT` (`documents/` by default). Files must
+be UTF-8 to open successfully.
 
 ### Compare a JSONL transcript with SQLite
 
@@ -719,25 +643,18 @@ records.
 
 ### The browser still shows an older frontend
 
-After rebuilding the web container, reload the page so the browser fetches the
-new hashed JavaScript and CSS assets.
+After `just restart`, reload the page so the browser fetches the new hashed
+JavaScript and CSS assets.
 
 ## Development and tests
 
-Run the backend suite in Docker:
+Run the backend suite, frontend lint, and the production TypeScript/Vite build:
 
 ```bash
-docker compose --profile test run --rm --build backend-tests
+just test            # or just test-backend / just test-frontend
 ```
 
-Run frontend lint and the production TypeScript/Vite build in Docker:
-
-```bash
-docker compose --profile test run --rm --build frontend-check
-```
-
-For local development, the backend requires Python 3.14 and
-[uv](https://docs.astral.sh/uv/), while the frontend uses Node.js and npm:
+The same checks without `just`:
 
 ```bash
 cd backend

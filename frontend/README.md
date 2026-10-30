@@ -9,4 +9,5 @@ npm run lint
 npm run build
 ```
 
-The production build is copied into the Caddy image by `server/Dockerfile`.
+`just up` and `just serve` build it and serve `dist/` with `vite preview`, which
+forwards `/api` to the backend on `VIEWER_API_PORT` (see `vite.config.ts`).

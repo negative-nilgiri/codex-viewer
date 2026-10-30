@@ -8,12 +8,12 @@ table. Keep it updated when you change the structure.
 
 A local, single-user viewer for Codex and Claude Code JSONL session transcripts
 and Markdown files. FastAPI + SQLite backend (`backend/`), React + Vite
-frontend (`frontend/`), served through Caddy via Docker Compose.
+frontend (`frontend/`), run natively with `just` (uvicorn plus `vite preview`).
 
 ## Rules that are easy to break
 
-- Never write to transcript or Markdown source files. They are mounted read-only and are the source of truth.
-- Annotations in SQLite cannot be rebuilt from transcripts. Do not drop or recreate the `annotations` table, and do not run `docker compose down --volumes` as a cleanup step.
+- Never write to transcript or Markdown source files. The app only reads them; they are the source of truth.
+- Annotations in SQLite cannot be rebuilt from transcripts. Do not drop or recreate the `annotations` table, and do not delete `data/viewer.sqlite3` as a cleanup step.
 - Only newline-terminated JSONL lines are processed. Keep sync offsets advancing only past complete lines.
 - In the code, `profile` means source id. `message_index` is 1-based; Virtuoso indexes are 0-based.
 - Changing an API response shape means updating `backend/src/session_viewer_backend/api.py`, `frontend/src/api.ts`, and the tests together.
@@ -30,17 +30,17 @@ cd backend && uv run --group dev pytest
 # Frontend checks
 cd frontend && npm ci && npm run lint && npm run build
 
-# Both, in Docker, with no host toolchain
+# Both
 just test
 
-# Run the app natively at http://127.0.0.1:41730 (ports: VIEWER_PORT, VIEWER_API_PORT)
-just setup && just serve
+# Run the app in the background at http://127.0.0.1:41730 (ports: VIEWER_PORT, VIEWER_API_PORT)
+just setup && just up      # stop with just down; logs in data/viewer.log
 
-# Or in Docker, at http://localhost:41730
-just setup && just up
+# Or in this terminal until Ctrl-C
+just serve
 ```
 
-`vite.config.ts` proxies `/api` to `127.0.0.1:$VIEWER_API_PORT` in both `vite` and `vite preview`; `just serve` sets it.
+`vite.config.ts` proxies `/api` to `127.0.0.1:$VIEWER_API_PORT` in both `vite` and `vite preview`; the justfile exports it.
 There are no frontend unit tests, so lint and the build are the frontend check.
 After changing frontend code, verify the UI in the running app, not only the build.
 
@@ -49,5 +49,5 @@ After changing frontend code, verify the UI in the running app, not only the bui
 - Match the surrounding code. Backend: plain functions and dataclasses, standard-library `sqlite3`, no ORM. Frontend: TypeScript, single quotes, no semicolons, plain CSS in `App.css`.
 - Add or update a backend test for backend behavior changes. Existing tests build tiny JSONL transcripts in `tmp_path`; copy that pattern.
 - Update `README.md` when user-visible behavior, configuration, or the HTTP API list changes.
-- Do not commit `.env`, `config/sources.toml`, or anything under `metadata/`, `bookmarks/`, `archives/`, or `documents/` (they are gitignored runtime data).
-- Naming still says "codex" in places (compose project name, `localStorage` keys, page title). That is legacy, not a design. Do not rename `localStorage` keys casually: it would orphan users' saved bookmarks and fold state.
+- Do not commit `.env`, `config/sources.toml`, or anything under `data/`, `metadata/`, `bookmarks/`, `archives/`, or `documents/` (they are gitignored runtime data).
+- Naming still says "codex" in places (`localStorage` keys, page title). That is legacy, not a design. Do not rename `localStorage` keys casually: it would orphan users' saved bookmarks and fold state.

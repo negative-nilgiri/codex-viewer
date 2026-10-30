@@ -1,17 +1,7 @@
 # Copy this file to config/sources.toml, then adapt it to your machine.
 #
-# Docker mounts the host directory selected by VIEWER_SOURCES_ROOT at /sources.
-# External transcript paths are therefore CONTAINER paths beneath /sources, not
-# host paths. The archive source at the bottom uses its own /archives mount.
-# When tracking a single Codex sessions directory, use:
-#
-#   .env:
-#     VIEWER_SOURCES_ROOT=/Users/alice/.codex/sessions
-#
-#   source path:
-#     /sources
-#
-# Both paths then refer to the same directory.
+# Every path is a host path: either absolute, or relative to this config/
+# directory. `~` and `$HOME` are not expanded.
 
 [[sources]]
 # `id` is an arbitrary label displayed by the viewer. It is not a Codex account
@@ -24,35 +14,29 @@ id = "personal"
 adapter = "codex"
 
 # Discovery is recursive. For Codex, point this at the directory containing the
-# year/month/day session folders. Because the single-source example mounts that
-# exact directory, its container path is simply /sources.
-path = "/sources"
+# year/month/day session folders.
+path = "/Users/alice/.codex/sessions"
 
-# Add more [[sources]] blocks only when the single source above is insufficient.
-# All paths must be reachable beneath the same VIEWER_SOURCES_ROOT mount. For
-# example, you could mount /Users/alice/agent-data and arrange these host paths:
-#
-#   /Users/alice/agent-data/personal/sessions
-#   /Users/alice/agent-data/work/sessions
-#   /Users/alice/agent-data/claude-projects
+# Add more [[sources]] blocks for other session directories.
 #
 # Example second Codex home:
 #
 # [[sources]]
 # id = "work"
 # adapter = "codex"
-# path = "/sources/work/sessions"
+# path = "/Users/alice/.codex-work/sessions"
 #
 # Example Claude Code projects directory:
 #
 # [[sources]]
 # id = "claude"
 # adapter = "claude"
-# path = "/sources/claude-projects"
+# path = "/Users/alice/.claude/projects"
 
-# Archives created by this viewer use a separate writable mount. Keep this entry
-# enabled to rediscover an exported conversation as an ordinary session.
+# Archives created by this viewer. Keep this entry enabled to rediscover an
+# exported conversation as an ordinary session. It must be the directory set by
+# VIEWER_ARCHIVES_ROOT in .env (default ./archives, which is ../archives from here).
 [[sources]]
 id = "archive"
 adapter = "archive"
-path = "/archives"
+path = "../archives"

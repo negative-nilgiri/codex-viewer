@@ -1138,7 +1138,7 @@ function Transcript({
           ) : !session.source_present ? (
             <div className="empty-transcript">
               <h2>Source unavailable</h2>
-              <p>The indexed catalog entry remains, but its rollout is not currently mounted.</p>
+              <p>The indexed catalog entry remains, but its rollout file is not currently available.</p>
             </div>
           ) : !session.indexed ? (
             <div className="empty-transcript">
@@ -1432,7 +1432,7 @@ function App() {
                 </nav>
               )
             ) : sessions.length === 0 && loadingSessions ? (
-              <div className="empty-sidebar">Scanning mounted sessions…</div>
+              <div className="empty-sidebar">Scanning sessions…</div>
             ) : sessions.length === 0 ? (
               <div className="empty-sidebar">
                 <p>No session transcripts were discovered.</p>

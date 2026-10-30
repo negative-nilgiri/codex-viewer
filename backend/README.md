@@ -9,7 +9,8 @@ uv run viewer --help
 uv run uvicorn session_viewer_backend.api:app --reload
 ```
 
-Configuration:
+Configuration (the repository's `justfile` sets all of these to folders in the
+repository; set them yourself when running the commands above by hand):
 
 - `VIEWER_DATABASE`, default `/data/viewer.sqlite3`
 - `VIEWER_SOURCES_FILE`, default `/config/sources.toml`
