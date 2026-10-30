@@ -60,8 +60,7 @@ open:
 
 # Serve the running viewer to the tailnet over plain HTTP (the tailnet has no HTTPS certificates).
 tailscale-serve: health
-    tailscale serve --bg --http=80 "$VIEWER_PORT"
-    tailscale serve status
+    @tailscale serve --bg --http=80 "$VIEWER_PORT"
 
 # Build images and start the viewer in the background.
 up: setup
@@ -88,9 +87,10 @@ status:
     docker compose ps
 
 # Check the HTTP health endpoint.
+[no-exit-message]
 health:
-    curl --fail --silent --show-error "http://127.0.0.1:$VIEWER_PORT/api/health"
-    @echo
+    @curl --fail --silent --output /dev/null "http://127.0.0.1:$VIEWER_PORT/api/health" || { echo "The viewer isn't answering on port $VIEWER_PORT. Start it with: just serve" >&2; exit 1; }
+    @echo "The viewer is up on http://127.0.0.1:$VIEWER_PORT"
 
 # Follow API and web logs.
 logs:
