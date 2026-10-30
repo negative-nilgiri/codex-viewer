@@ -58,8 +58,8 @@ serve: setup
 open:
     open "http://127.0.0.1:$VIEWER_PORT"
 
-# Serve the viewer to the tailnet over plain HTTP (the tailnet has no HTTPS certificates).
-tailscale-serve:
+# Serve the running viewer to the tailnet over plain HTTP (the tailnet has no HTTPS certificates).
+tailscale-serve: health
     tailscale serve --bg --http=80 "$VIEWER_PORT"
     tailscale serve status
 
